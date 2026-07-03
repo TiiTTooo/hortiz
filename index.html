@@ -2786,22 +2786,20 @@ async function salvarConfigLoja(lojaId){
 }
 
 async function gerarCobrancaLoja(lojaId){
-  if(!asaasKey){showToast('Configure a API Key do Asaas primeiro');return;}
   const loja=todasLojas.find(l=>l.id===lojaId);
   if(!loja){showToast('Loja não encontrada');return;}
   const sub=loja.assinaturas&&loja.assinaturas[0];
-  const valor=sub?parseFloat(sub.valor_mensal||250):250;
+  const plano=sub?sub.plano:'mensal';
   showToast('Gerando cobrança no Asaas…');
-  // A cobrança real vai ser feita via backend (Supabase Edge Function)
-  // Por enquanto registramos a intenção no banco
   try{
-    await db.from('cobranças').insert({
-      loja_id:lojaId,
-      assinatura_id:sub?sub.id:null,
-      valor,status:'pendente',
-      vencimento:new Date(Date.now()+3*86400000).toISOString().split('T')[0]
-    });
-    showToast('Cobrança registrada! Integração Asaas em breve.');
+    const {data,error}=await db.functions.invoke('criar-assinatura-asaas',{body:{loja_id:lojaId,plano}});
+    if(error||!data||data.error){
+      showToast('Erro: '+(data&&data.error?data.error:(error?error.message:'tente novamente')));
+      return;
+    }
+    if(!data.link){showToast('Assinatura criada, mas o link ainda não ficou pronto. Tenta de novo em alguns segundos.');return;}
+    window.open(data.link,'_blank');
+    showToast('Cobrança gerada! Link aberto em nova aba.');
   }catch(e){showToast('Erro: '+e.message);}
 }
 
@@ -2863,18 +2861,21 @@ async function renderAssinaturasTodasLojas(){
 async function selecionarPlanoLoja(lojaId,plano,btnEl){
   const textoOriginal=btnEl?btnEl.innerHTML:'';
   if(btnEl)btnEl.innerHTML='<i class="ti ti-loader-2"></i> Gerando…';
-  let valorMensal=250;
   try{
-    const {data:sub}=await db.from('assinaturas').select('*').eq('loja_id',lojaId).single();
-    valorMensal=parseFloat(sub&&sub.valor_mensal||250);
-  }catch(e){}
-  const valor=plano==='anual'?valorMensal*12:valorMensal;
-  setTimeout(()=>{
+    const {data,error}=await db.functions.invoke('criar-assinatura-asaas',{body:{loja_id:lojaId,plano}});
+    if(btnEl)btnEl.innerHTML=textoOriginal;
+    if(error||!data||data.error){
+      showToast('Erro: '+(data&&data.error?data.error:(error?error.message:'tente novamente')));
+      return;
+    }
+    if(!data.link){showToast('Assinatura criada, mas o link ainda não ficou pronto. Tenta de novo em alguns segundos.');return;}
     const area=el('payLinkArea-'+lojaId);const link=el('payLink-'+lojaId);
     if(area)area.style.display='block';
-    if(link){link.href='https://asaas.com';link.innerHTML='<i class="ti ti-external-link"></i> Pagar R$ '+valor.toLocaleString('pt-BR')+' via Asaas';}
+    if(link){link.href=data.link;link.innerHTML='<i class="ti ti-external-link"></i> Pagar R$ '+parseFloat(data.valor).toLocaleString('pt-BR')+' via Asaas';}
+  }catch(e){
     if(btnEl)btnEl.innerHTML=textoOriginal;
-  },900);
+    showToast('Erro: '+e.message);
+  }
 }
 
 async function selecionarPlano(plano){
@@ -2882,16 +2883,24 @@ async function selecionarPlano(plano){
   el('btnPlanoAnual').className=plano==='anual'?'btn-primary':'btn-ghost';
   el('payLoading').style.display='block';
   el('payLinkArea').style.display='none';
-  // Buscar valor configurado para essa loja
-  const {data:sub}=await db.from('assinaturas').select('*').eq('loja_id',currentLojaId).single();
-  const valor=sub?(plano==='anual'?parseFloat(sub.valor_mensal||250)*12:parseFloat(sub.valor_mensal||250)):250;
-  // Por agora gera um link placeholder — a integração real com Asaas será via Edge Function
-  setTimeout(()=>{
+  try{
+    const {data,error}=await db.functions.invoke('criar-assinatura-asaas',{body:{loja_id:currentLojaId,plano}});
     el('payLoading').style.display='none';
+    if(error||!data||data.error){
+      showToast('Erro ao gerar cobrança: '+(data&&data.error?data.error:(error?error.message:'tente novamente')));
+      return;
+    }
+    if(!data.link){
+      showToast('Assinatura criada, mas o link ainda não ficou pronto. Tenta de novo em alguns segundos.');
+      return;
+    }
     el('payLinkArea').style.display='block';
-    el('payLink').href='https://asaas.com'; // será substituído pelo link real do Asaas
-    el('payLink').textContent='Pagar R$ '+valor.toFixed(2)+' via Asaas';
-  },1000);
+    el('payLink').href=data.link;
+    el('payLink').textContent='Pagar R$ '+parseFloat(data.valor).toFixed(2)+' via Asaas';
+  }catch(e){
+    el('payLoading').style.display='none';
+    showToast('Erro ao gerar cobrança: '+e.message);
+  }
 }
 
 /* ══ FIM MASTER ══ */
