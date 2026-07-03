@@ -2557,12 +2557,16 @@ async function renderUsuarios(){
     let html='';
     (gerentes||[]).forEach(g=>{
       const lojaNome=(lojas.find(l=>l.id===g.loja_id)||{}).nome||'—';
+      const nomeEscapado=(g.nome||'').replace(/'/g,"\\'");
+      const opcoesLoja=lojas.map(l=>`<option value="${l.id}"${l.id===g.loja_id?' selected':''}>${l.nome}</option>`).join('');
       html+=`<div class="data-card">
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${g.nome}</p>
-          <p style="font-size:12px;color:var(--text2);">${g.email} · ${lojaNome}</p>
+          <p style="font-size:12px;color:var(--text2);">${g.email}</p>
+          ${lojas.length>1?`<select onchange="reatribuirGerente('${g.id}',this.value)" style="font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:`<p style="font-size:12px;color:var(--text2);margin-top:2px;">${lojaNome}</p>`}
         </div>
         ${badge('badge-manager','Gerente')}
+        <button class="btn-danger-soft btn-sm" onclick="removerGerente('${g.id}','${nomeEscapado}')" title="Remover acesso"><i class="ti ti-trash"></i></button>
       </div>`;
     });
     (convites||[]).filter(c=>!c.usado).forEach(c=>{
@@ -2577,6 +2581,25 @@ async function renderUsuarios(){
     });
     cont.innerHTML=html||'<div class="empty">Nenhum gerente ou convite ainda.</div>';
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar equipe.</div>';}
+}
+
+async function reatribuirGerente(perfilId,novaLojaId){
+  try{
+    const {error}=await db.from('perfis').update({loja_id:parseInt(novaLojaId)}).eq('id',perfilId);
+    if(error){showToast('Erro ao mover gerente: '+error.message);return;}
+    const novaLoja=lojas.find(l=>l.id===parseInt(novaLojaId));
+    showToast('Gerente movido pra '+(novaLoja?novaLoja.nome:'outra loja')+'!');
+    renderUsuarios();
+  }catch(e){showToast('Erro: '+e.message);}
+}
+async function removerGerente(perfilId,nome){
+  if(!confirm('Remover o acesso de "'+nome+'"? Essa pessoa perde o acesso imediatamente e precisaria de um novo convite pra voltar.'))return;
+  try{
+    const {error}=await db.from('perfis').delete().eq('id',perfilId);
+    if(error){showToast('Erro ao remover: '+error.message);return;}
+    showToast('Acesso removido.');
+    renderUsuarios();
+  }catch(e){showToast('Erro: '+e.message);}
 }
 
 /* ── CHARTS ── */
@@ -2889,6 +2912,10 @@ async function renderMaster(){
           <input type="date" value="${trialFim}" id="masterTrial_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;"/>
         </div>
         <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;display:block;margin-bottom:2px;">Vencimento mensal.</label>
+          <input type="date" value="${sub&&sub.proxima_cobranca?sub.proxima_cobranca:''}" id="masterVenc_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;"/>
+        </div>
+        <div>
           <label style="font-size:10px;color:var(--text3);text-transform:uppercase;display:block;margin-bottom:2px;">Status</label>
           <select id="masterStatus_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;">
             <option value="trial"${status==='trial'?' selected':''}>Trial</option>
@@ -2922,12 +2949,14 @@ async function salvarConfigLoja(lojaId){
   const valEl=document.getElementById('masterVal_'+lojaId);
   const planoEl=document.getElementById('masterPlano_'+lojaId);
   const trialEl=document.getElementById('masterTrial_'+lojaId);
+  const vencEl=document.getElementById('masterVenc_'+lojaId);
   const statusEl=document.getElementById('masterStatus_'+lojaId);
   if(!valEl||!planoEl||!statusEl){showToast('Erro: campos não encontrados');return;}
   const valor=parseFloat(valEl.value);
   if(isNaN(valor)||valor<0){showToast('Valor inválido');return;}
   const plano=planoEl.value;
   const trialFim=trialEl&&trialEl.value?trialEl.value:null;
+  const proximaCobranca=vencEl&&vencEl.value?vencEl.value:null;
   const status=statusEl.value;
   try{
     const {error}=await db.from('assinaturas').upsert({
@@ -2935,6 +2964,7 @@ async function salvarConfigLoja(lojaId){
       valor_mensal:valor,
       plano:plano,
       trial_fim:trialFim,
+      proxima_cobranca:proximaCobranca,
       status:status,
       updated_at:new Date().toISOString()
     },{onConflict:'loja_id'});
@@ -2994,18 +3024,21 @@ async function renderAssinaturasTodasLojas(){
   const cont=el('assinaturaLojasList');if(!cont||!currentUser)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
   try{
-    const {data,error}=await db.from('loja_membros').select('lojas(id,nome,logo,assinaturas(*))').eq('user_id',currentUser.id);
-    if(error||!data){cont.innerHTML='';return;}
-    const lojasDoUsuario=data.filter(m=>m.lojas).map(m=>m.lojas).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
+    const {data:membrosData,error}=await db.from('loja_membros').select('lojas(id,nome,logo)').eq('user_id',currentUser.id);
+    if(error||!membrosData){cont.innerHTML='';return;}
+    const lojasDoUsuario=membrosData.filter(m=>m.lojas).map(m=>m.lojas).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
     if(!lojasDoUsuario.length){cont.innerHTML='';return;}
+    const idsLojas=lojasDoUsuario.map(l=>l.id);
+    const {data:subsData}=await db.from('assinaturas').select('*').in('loja_id',idsLojas);
     cont.innerHTML=lojasDoUsuario.map(l=>{
-      const sub=l.assinaturas&&l.assinaturas[0];
+      const sub=(subsData||[]).find(s=>s.loja_id===l.id);
       const status=sub?sub.status:'sem_assinatura';
       const label={trial:'⏳ Trial',ativa:'✅ Ativa',vencida:'🔴 Vencida',cancelada:'⚫ Cancelada',sem_assinatura:'⚪ Sem assinatura'}[status]||status;
       const cor={trial:'var(--amber)',ativa:'var(--accent)',vencida:'var(--red)',cancelada:'var(--text3)',sem_assinatura:'var(--text3)'}[status]||'var(--text2)';
       const valorMensal=parseFloat(sub&&sub.valor_mensal||250);
       const precisaPagar=status==='trial'||status==='vencida'||status==='sem_assinatura';
       const ativa=l.id===currentLojaId;
+      const vencInfo=(status==='ativa'&&sub&&sub.proxima_cobranca)?' · vence em '+formatBR(sub.proxima_cobranca):'';
       return `<div class="card" style="padding:.875rem 1rem;margin-bottom:.625rem;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:${precisaPagar?'.625rem':'0'};">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -3014,7 +3047,7 @@ async function renderAssinaturasTodasLojas(){
             </div>
             <div>
               <p style="font-size:13px;font-weight:600;">${l.nome}${ativa?' <span style="color:var(--accent);font-size:11px;">· selecionada</span>':''}</p>
-              <p style="font-size:11px;color:${cor};font-weight:600;">${label}</p>
+              <p style="font-size:11px;color:${cor};font-weight:600;">${label}${vencInfo}</p>
             </div>
           </div>
         </div>
