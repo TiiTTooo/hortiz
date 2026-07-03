@@ -971,7 +971,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <p style="font-size:22px;font-weight:700;color:var(--accent);" id="subWallPrice">R$ 250<small style="font-size:14px;color:var(--text2);">/mês</small></p>
       <p style="font-size:12px;color:var(--text2);margin-top:4px;">Por loja cadastrada · Cancele quando quiser</p>
     </div>
-    <button class="btn-primary" onclick="simulatePay()" style="margin-bottom:.625rem;"><i class="ti ti-credit-card"></i> Assinar agora</button>
+    <button class="btn-primary" onclick="irParaAssinatura()" style="margin-bottom:.625rem;"><i class="ti ti-credit-card"></i> Assinar agora</button>
     <button class="btn-ghost btn-w" onclick="doLogout()"><i class="ti ti-logout"></i> Sair</button>
     <p style="font-size:11px;color:var(--text3);margin-top:1rem;" id="subTrialInfo"></p>
   </div>
@@ -1451,6 +1451,7 @@ function atualizarLabelsPreco(){
 let subscription={status:'trial', expiresAt: new Date(Date.now()+3*86400000), trialDaysLeft:3, valorMensal:250};
 let todasLojas=[]; // cache master
 
+let acessoOperacionalBloqueado=false;
 async function checkSubscription(){
   try{
     const {data:sub}=await db.from('assinaturas').select('*').eq('loja_id',currentLojaId).single();
@@ -1474,13 +1475,41 @@ async function checkSubscription(){
     }
   }catch(e){}
   atualizarLabelsPreco();
-  const now=new Date();
   updateSubStatus();
+  const souGerente=currentUser&&currentUser.role==='manager';
   if(subscription.status==='expired'){
-    el('subWall').style.display='flex';
+    acessoOperacionalBloqueado=true;
+    if(souGerente){
+      // Gerente não mexe com pagamento — só perde acesso às abas operacionais
+      el('subWall').style.display='none';
+      const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
+      if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
+    } else {
+      el('subWall').style.display='flex';
+    }
   } else {
+    acessoOperacionalBloqueado=false;
     el('subWall').style.display='none';
   }
+  atualizarBloqueioMenu();
+}
+function atualizarBloqueioMenu(){
+  const bloquear=acessoOperacionalBloqueado&&currentUser&&currentUser.role==='manager';
+  document.querySelectorAll('[data-tab="pedidos"],[data-tab="compras"]').forEach(btn=>{
+    btn.style.opacity=bloquear?'.4':'';
+    btn.title=bloquear?'Assinatura vencida — acesso bloqueado':'';
+    btn.querySelectorAll('.lock-badge').forEach(b=>b.remove());
+    if(bloquear){
+      const lock=document.createElement('i');
+      lock.className='ti ti-lock lock-badge';
+      lock.style.cssText='font-size:11px;margin-left:4px;';
+      btn.appendChild(lock);
+    }
+  });
+}
+function irParaAssinatura(){
+  el('subWall').style.display='none';
+  switchTab('assinatura');
 }
 function updateSubStatus(){
   // update sub wall msg
@@ -1494,12 +1523,6 @@ function updateSubStatus(){
   const tabA=el('tab-assinatura');
   if(tabA&&tabA.style.display!=='none')renderAssinatura();
 }
-function simulatePay(){
-  subscription={status:'active', expiresAt:new Date(Date.now()+30*86400000), trialDaysLeft:0};
-  el('subWall').style.display='none';
-  updateSubStatus();
-  showToast('Assinatura ativada! ✓ Válida por 30 dias');
-}
 function openSubManager(){
   const exp=subscription.expiresAt.toLocaleDateString('pt-BR');
   el('subManagerContent').innerHTML=`
@@ -1510,9 +1533,9 @@ function openSubManager(){
     </div>
     <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1rem;">
       <p style="font-size:13px;color:var(--text2);margin-bottom:.5rem;">Plano atual</p>
-      <p style="font-size:20px;font-weight:700;">R$ 97<small style="font-size:13px;color:var(--text2);">/mês por loja</small></p>
+      <p style="font-size:20px;font-weight:700;">${fmt(subscription.valorMensal||250)}<small style="font-size:13px;color:var(--text2);">/mês por loja</small></p>
     </div>
-    ${subscription.status!=='active'?`<button class="btn-primary" onclick="simulatePay();el('subManagerModal').classList.remove('open')"><i class="ti ti-credit-card"></i> Renovar agora (demo)</button>`:`<button class="btn-ghost btn-w"><i class="ti ti-calendar"></i> Renovação automática em ${exp}</button>`}`;
+    ${subscription.status!=='active'?`<button class="btn-primary" onclick="irParaAssinatura();el('subManagerModal').classList.remove('open')"><i class="ti ti-credit-card"></i> Renovar agora</button>`:`<button class="btn-ghost btn-w"><i class="ti ti-calendar"></i> Renovação automática em ${exp}</button>`}`;
   el('subManagerModal').classList.add('open');
 }
 
@@ -1563,7 +1586,11 @@ function renderPrecoHistorico(){
 /* ── ALL TABS ── */
 const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','loja','usuarios','assinatura','master'];
 function switchTab(tab){
-  if(sidebarOpen)toggleSidebar();
+  if(acessoOperacionalBloqueado&&currentUser&&currentUser.role==='manager'&&(tab==='pedidos'||tab==='compras')){
+    showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
+    return;
+  }
+  if(sidebarOpen&&window.matchMedia('(max-width:768px)').matches)toggleSidebar();
   ALL_TABS.forEach(t=>{const s=el('tab-'+t);if(s)s.style.display=t===tab?'':'none';});
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
   el('sticky-save').style.display='none';
