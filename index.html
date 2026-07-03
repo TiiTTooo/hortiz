@@ -281,9 +281,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <p id="loginErro" style="font-size:12px;color:var(--red);text-align:center;margin-top:.625rem;display:none;"></p>
     </form>
     <form id="lt-register" style="display:none;" onsubmit="event.preventDefault();doRegister()">
-      <div class="login-field"><label>Nome</label><input type="text" id="regNome" name="name" placeholder="Nome completo" autocomplete="name" onkeydown="if(event.key==='Enter')document.getElementById('regLoja').focus()"/></div>
-      <div class="login-field"><label>Nome da loja</label><input type="text" id="regLoja" name="organization" placeholder="Ex: Loja 01 — Centro" autocomplete="organization" onkeydown="if(event.key==='Enter')document.getElementById('regEmail').focus()"/></div>
-      <div class="login-field"><label>E-mail</label><input type="email" id="regEmail" name="email" placeholder="seu@email.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('regPass').focus()"/></div>
+      <div class="login-field"><label>Nome</label><input type="text" id="regNome" name="name" placeholder="Nome completo" autocomplete="name" onkeydown="if(event.key==='Enter')document.getElementById('regEmail').focus()"/></div>
+      <div class="login-field"><label>E-mail</label><input type="email" id="regEmail" name="email" placeholder="seu@email.com" autocomplete="email" onblur="verificarConviteRegistro()" onkeydown="if(event.key==='Enter')document.getElementById('regLoja').focus()"/></div>
+      <div class="login-field" id="regLojaField"><label>Nome da loja</label><input type="text" id="regLoja" name="organization" placeholder="Ex: Loja 01 — Centro" autocomplete="organization" onkeydown="if(event.key==='Enter')document.getElementById('regPass').focus()"/></div>
+      <p id="regConviteMsg" style="display:none;font-size:12px;color:var(--accent);background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.5rem .625rem;margin-bottom:.75rem;"></p>
       <div class="login-field"><label>Senha</label><input type="password" id="regPass" name="password" placeholder="•••••••• (mín. 6 caracteres)" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()"/></div>
       <button type="submit" class="btn-primary" style="margin-top:.5rem;"><i class="ti ti-user-plus"></i> Criar conta</button>
       <p id="regErro" style="font-size:12px;color:var(--red);text-align:center;margin-top:.625rem;display:none;"></p>
@@ -324,9 +325,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="historico"    onclick="switchTab('historico')"><i class="ti ti-history"></i> Compras Realizadas</div>
       <div class="side-btn" data-tab="precos"       onclick="switchTab('precos')"><i class="ti ti-tag"></i> Custo / Preço</div>
       <div class="side-sep"></div>
-      <div class="side-btn" data-tab="loja"         onclick="switchTab('loja')"><i class="ti ti-building-store"></i> Minha Loja</div>
+      <div class="side-btn" data-tab="loja"         onclick="switchTab('loja')" id="sideLoja"><i class="ti ti-building-store"></i> Minha Loja</div>
       <div class="side-btn" data-tab="usuarios"     onclick="switchTab('usuarios')" id="sideUsuarios"><i class="ti ti-users"></i> Usuários</div>
-      <div class="side-btn" data-tab="assinatura"   onclick="switchTab('assinatura')"><i class="ti ti-credit-card"></i> Assinatura</div>
+      <div class="side-btn" data-tab="assinatura"   onclick="switchTab('assinatura')" id="sideAssinatura"><i class="ti ti-credit-card"></i> Assinatura</div>
       <div class="side-btn" data-tab="master" onclick="switchTab('master')" id="sideMaster" style="display:none;color:var(--amber);"><i class="ti ti-crown"></i> Master</div>
     </div>
 
@@ -872,19 +873,16 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- USUÁRIOS -->
       <section id="tab-usuarios" style="display:none;">
         <div class="card" id="userFormCard">
-          <div class="card-label" id="userFormTitle">Convidar usuário</div>
+          <div class="card-label">Convidar gerente</div>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:.625rem;">A pessoa convidada só vai enxergar a loja escolhida abaixo. Depois de convidar, peça pra ela se cadastrar normalmente na tela de login usando o mesmo e-mail.</p>
           <div class="field-row">
             <input id="invNome" placeholder="Nome"/>
             <input id="invEmail" type="email" placeholder="E-mail"/>
             <select id="invLoja"></select>
-            <select id="invRole"><option value="manager">Gerente (loja)</option><option value="owner">Dono (todas as lojas)</option></select>
           </div>
-          <div style="display:flex;gap:.5rem;">
-            <button class="btn-primary" onclick="saveUsuario()"><i class="ti ti-device-floppy"></i> <span id="userFormBtn">Adicionar usuário</span></button>
-            <button class="btn-ghost" onclick="cancelEditUsuario()" id="btnCancelUser" style="display:none;flex:none;">Cancelar</button>
-          </div>
+          <button class="btn-primary" onclick="saveUsuario()"><i class="ti ti-send"></i> Enviar convite</button>
         </div>
-        <div class="sh"><i class="ti ti-users"></i> Usuários cadastrados</div>
+        <div class="sh"><i class="ti ti-users"></i> Equipe</div>
         <div id="listaUsuarios"></div>
       </section>
 
@@ -1086,14 +1084,35 @@ async function doLogin(){
   await carregarPerfilEEntrar(data.user.id);
 }
 
+let conviteDetectado=null;
+async function verificarConviteRegistro(){
+  const email=el('regEmail').value.trim();
+  const msgEl=el('regConviteMsg');const lojaField=el('regLojaField');
+  if(!email){conviteDetectado=null;lojaField.style.display='';msgEl.style.display='none';return;}
+  try{
+    const {data}=await db.from('convites_usuario').select('*, lojas(nome)').eq('email',email).eq('usado',false).order('created_at',{ascending:false}).limit(1).maybeSingle();
+    if(data){
+      conviteDetectado=data;
+      lojaField.style.display='none';
+      msgEl.style.display='block';
+      msgEl.textContent='✅ Convite encontrado! Você vai entrar como gerente de "'+((data.lojas&&data.lojas.nome)||'loja')+'".';
+    } else {
+      conviteDetectado=null;lojaField.style.display='';msgEl.style.display='none';
+    }
+  }catch(e){conviteDetectado=null;lojaField.style.display='';msgEl.style.display='none';}
+}
+
 async function doRegister(){
   const nome=el('regNome').value.trim();
-  const lojaNome=el('regLoja').value.trim();
   const email=el('regEmail').value.trim();
   const senha=el('regPass').value;
+  const lojaNome=el('regLoja').value.trim();
   el('regErro').style.display='none';
 
-  if(!nome||!lojaNome||!email||senha.length<6){
+  await verificarConviteRegistro();
+  const temConvite=!!conviteDetectado;
+
+  if(!nome||!email||senha.length<6||(!temConvite&&!lojaNome)){
     mostrarErroRegistro('Preencha todos os campos (senha mínimo 6 caracteres).');
     return;
   }
@@ -1105,16 +1124,25 @@ async function doRegister(){
   }
 
   const userId = authData.user.id;
+  let lojaIdFinal, roleFinal;
 
-  const { data: lojaData, error: lojaError } = await db.from('lojas').insert({ nome: lojaNome }).select().single();
-  if(lojaError){ mostrarErroRegistro('Erro ao criar loja: '+lojaError.message); return; }
+  if(temConvite){
+    lojaIdFinal=conviteDetectado.loja_id;
+    roleFinal=conviteDetectado.role||'manager';
+    try{await db.from('convites_usuario').update({usado:true}).eq('id',conviteDetectado.id);}catch(e){}
+  } else {
+    const { data: lojaData, error: lojaError } = await db.from('lojas').insert({ nome: lojaNome }).select().single();
+    if(lojaError){ mostrarErroRegistro('Erro ao criar loja: '+lojaError.message); return; }
+    lojaIdFinal=lojaData.id;
+    roleFinal='owner';
+  }
 
   const { error: perfilError } = await db.from('perfis').insert({
-    id: userId, nome, email, role: 'owner', loja_id: lojaData.id, is_admin: false
+    id: userId, nome, email, role: roleFinal, loja_id: lojaIdFinal, is_admin: false
   });
   if(perfilError){ mostrarErroRegistro('Erro ao criar perfil: '+perfilError.message); return; }
 
-  showToast('Conta criada com sucesso!');
+  showToast(temConvite?'Conta criada! Bem-vindo(a) à equipe 🎉':'Conta criada com sucesso!');
   await carregarPerfilEEntrar(userId);
 }
 
@@ -1145,7 +1173,7 @@ async function carregarPerfilEEntrar(userId){
 async function enterApp(){
   el('loginScreen').style.display='none';
   el('appShell').style.display='flex';el('appShell').style.flexDirection='column';
-  if(currentUser.role==='manager'&&currentUser.lojaId){currentLojaId=currentUser.lojaId;el('sideUsuarios').style.display='none';}
+  if(currentUser.role==='manager'&&currentUser.lojaId){currentLojaId=currentUser.lojaId;el('sideUsuarios').style.display='none';el('sideAssinatura').style.display='none';el('sideLoja').style.display='none';}
   await carregarMinhasLojas();
   refreshHeader();
   await carregarDadosDaLoja();
@@ -2321,45 +2349,62 @@ function renderLojas(){
     </div>`).join('');
 }
 
-/* ── USUÁRIOS ── */
+/* ── USUÁRIOS (convites de gerente, vinculados a 1 loja) ── */
 function populateInvLoja(){el('invLoja').innerHTML=lojas.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');}
-function saveUsuario(){
+async function saveUsuario(){
   const nome=el('invNome').value.trim();const email=el('invEmail').value.trim();
-  if(!nome||!email){showToast('Preencha nome e e-mail');return;}
-  const role=el('invRole').value;const lojaId=role==='owner'?null:parseInt(el('invLoja').value);
-  if(editingUserId){
-    const u=usuarios.find(x=>x.id===editingUserId);
-    if(u){u.nome=nome;u.email=email;u.role=role;u.lojaId=lojaId;}
-    editingUserId=null;el('btnCancelUser').style.display='none';el('userFormTitle').textContent='Convidar usuário';el('userFormBtn').textContent='Adicionar usuário';
-    showToast('Usuário atualizado!');
-  } else {
-    usuarios.push({id:nextId++,nome,email,role,lojaId});showToast(`${nome} adicionado!`);
-  }
-  el('invNome').value='';el('invEmail').value='';renderUsuarios();
+  const lojaId=parseInt(el('invLoja').value);
+  if(!nome||!email||!lojaId){showToast('Preencha nome, e-mail e loja');return;}
+  try{
+    const {error}=await db.from('convites_usuario').insert({email,loja_id:lojaId,role:'manager',criado_por:currentUser.id});
+    if(error){
+      showToast(error.code==='23505'?'Já existe um convite pendente pra esse e-mail nessa loja':'Erro: '+error.message);
+      return;
+    }
+    showToast('Convite criado! Peça pra "'+nome+'" se cadastrar com o e-mail '+email);
+  }catch(e){showToast('Erro: '+e.message);return;}
+  el('invNome').value='';el('invEmail').value='';
+  renderUsuarios();
 }
-function editUsuario(id){
-  const u=usuarios.find(x=>x.id===id);if(!u)return;
-  editingUserId=id;el('invNome').value=u.nome;el('invEmail').value=u.email;
-  el('invRole').value=u.role;if(u.lojaId)el('invLoja').value=u.lojaId;
-  el('userFormTitle').textContent='Editando: '+u.nome;el('userFormBtn').textContent='Salvar alteração';
-  el('btnCancelUser').style.display='';
-  el('userFormCard').scrollIntoView({behavior:'smooth'});
+async function cancelarConvite(id){
+  try{
+    const {error}=await db.from('convites_usuario').delete().eq('id',id);
+    if(error){showToast('Erro: '+error.message);return;}
+    showToast('Convite cancelado');renderUsuarios();
+  }catch(e){showToast('Erro: '+e.message);}
 }
-function cancelEditUsuario(){editingUserId=null;el('invNome').value='';el('invEmail').value='';el('btnCancelUser').style.display='none';el('userFormTitle').textContent='Convidar usuário';el('userFormBtn').textContent='Adicionar usuário';}
-function removeUsuario(id){usuarios=usuarios.filter(u=>u.id!==id);renderUsuarios();showToast('Usuário removido');}
-function renderUsuarios(){
-  el('listaUsuarios').innerHTML=usuarios.map(u=>{
-    const lojaLabel=u.role==='owner'?'Todas as lojas':(lojas.find(l=>l.id===u.lojaId)||{nome:'—'}).nome;
-    return`<div class="data-card">
-      <div style="flex:1;min-width:0;">
-        <p style="font-size:14px;font-weight:600;">${u.nome}</p>
-        <p style="font-size:12px;color:var(--text2);">${u.email} · ${lojaLabel}</p>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        ${badge(u.role==='owner'?'badge-owner':'badge-manager',u.role==='owner'?'Dono':'Gerente')}
-        <button class="btn-ghost btn-sm" onclick="editUsuario(${u.id})" title="Editar"><i class="ti ti-edit"></i></button>
-        <button class="btn-danger-soft btn-sm" onclick="removeUsuario(${u.id})" title="Remover"><i class="ti ti-trash"></i></button>
-      </div></div>`;}).join('');
+async function renderUsuarios(){
+  const cont=el('listaUsuarios');if(!cont)return;
+  cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
+  try{
+    const lojaIds=lojas.map(l=>l.id);
+    const [{data:gerentes},{data:convites}]=await Promise.all([
+      lojaIds.length?db.from('perfis').select('*').in('loja_id',lojaIds).eq('role','manager'):Promise.resolve({data:[]}),
+      db.from('convites_usuario').select('*, lojas(nome)').eq('criado_por',currentUser.id).order('created_at',{ascending:false})
+    ]);
+    let html='';
+    (gerentes||[]).forEach(g=>{
+      const lojaNome=(lojas.find(l=>l.id===g.loja_id)||{}).nome||'—';
+      html+=`<div class="data-card">
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:14px;font-weight:600;">${g.nome}</p>
+          <p style="font-size:12px;color:var(--text2);">${g.email} · ${lojaNome}</p>
+        </div>
+        ${badge('badge-manager','Gerente')}
+      </div>`;
+    });
+    (convites||[]).filter(c=>!c.usado).forEach(c=>{
+      const lojaNome=(c.lojas&&c.lojas.nome)||'—';
+      html+=`<div class="data-card" style="opacity:.8;">
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:14px;font-weight:600;">${c.email}</p>
+          <p style="font-size:12px;color:var(--amber);">⏳ Convite pendente · ${lojaNome}</p>
+        </div>
+        <button class="btn-danger-soft btn-sm" onclick="cancelarConvite(${c.id})" title="Cancelar convite"><i class="ti ti-x"></i></button>
+      </div>`;
+    });
+    cont.innerHTML=html||'<div class="empty">Nenhum gerente ou convite ainda.</div>';
+  }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar equipe.</div>';}
 }
 
 /* ── CHARTS ── */
