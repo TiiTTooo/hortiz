@@ -2215,7 +2215,7 @@ function saveEditCompra(id){
   renderCompras();renderFornecedores();showToast('Alteração salva!');
 }
 function renderCompras(){
-  const my=compras.filter(c=>c.lojaId===currentLojaId);
+  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data===currentDate);
   const tot={fruta:0,legume:0,verdura:0};
   el('listaCompras').innerHTML=my.length?my.slice().reverse().map(c=>{
     const total=c.qtd*c.valorUnit;tot[c.categoria]+=total;
