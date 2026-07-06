@@ -75,6 +75,11 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.2
 
 /* ── SIDEBAR ── */
 #sidebar{width:210px;background:var(--bg2);border-right:1px solid var(--border);flex-shrink:0;display:none;flex-direction:column;padding:.75rem .5rem;gap:2px;overflow-y:auto;transition:background .25s;}
+.sidebar-header{display:flex;align-items:center;gap:10px;padding:.5rem;margin-bottom:.625rem;border-bottom:1px solid var(--border);}
+.sidebar-header-icon{width:42px;height:42px;border-radius:10px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden;flex-shrink:0;color:var(--accent);}
+.sidebar-header-icon img{width:100%;height:100%;object-fit:contain;}
+.sidebar-header-name{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sidebar-header-user{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #sidebar.open{display:flex;}
 #sidebarBackdrop{display:none;}
 @media(max-width:768px){
@@ -86,7 +91,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.2
     box-shadow:2px 0 20px rgba(0,0,0,.4);
     transform:translateX(-100%);
     transition:transform .25s ease;
-    padding-top:calc(.75rem + 68px);
+    padding-top:.75rem;
   }
   #sidebar.open{transform:translateX(0);}
   #sidebarBackdrop{
@@ -114,16 +119,12 @@ nav#bottomNav::-webkit-scrollbar{display:none;}
 main{flex:1;overflow-y:auto;padding:1.25rem 1.5rem 2rem;width:100%;}
 
 /* ── HOME ── */
-.home-hero{border-radius:var(--radius);overflow:hidden;margin-bottom:1rem;position:relative;height:260px;background:var(--bg3);display:flex;flex-direction:column;justify-content:flex-end;}
-.home-hero-bg{position:absolute;inset:0;background-size:cover;background-position:center;background-repeat:no-repeat;}
-.home-hero-bg.no-logo{background:linear-gradient(135deg,#0f2e12 0%,#1a4a1e 50%,#0f2e12 100%);}
-.home-hero-overlay{position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.82) 0%,rgba(0,0,0,.3) 60%,rgba(0,0,0,.1) 100%);}
-.home-hero-content{position:relative;z-index:2;padding:1.25rem 1.5rem;}
-.home-loja-icon{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:.625rem;overflow:hidden;border:2px solid rgba(255,255,255,.2);}
-.home-loja-icon img{width:100%;height:100%;object-fit:cover;}
-.home-loja-name{font-size:22px;font-weight:700;margin-bottom:.25rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.5);}
-.home-meta{font-size:13px;color:rgba(255,255,255,.7);}
-.home-hero-leaf{position:absolute;top:1.25rem;right:1.25rem;z-index:2;opacity:.25;font-size:80px;line-height:1;}
+.home-hero{display:flex;align-items:center;gap:14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1rem;}
+.home-loja-icon{width:60px;height:60px;border-radius:14px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden;flex-shrink:0;color:var(--accent);}
+.home-loja-icon img{width:100%;height:100%;object-fit:contain;}
+.home-hero-text{min-width:0;overflow:hidden;}
+.home-loja-name{font-size:19px;font-weight:700;margin-bottom:.125rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.home-meta{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .home-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,96px));justify-content:center;gap:1.25rem;margin-bottom:1.75rem;}
 @media(max-width:380px){.home-quick{grid-template-columns:repeat(2,1fr);}}
 .quick-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem .375rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;}
@@ -369,6 +370,13 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
   <div class="app-layout">
     <div id="sidebarBackdrop" onclick="toggleSidebar()"></div>
     <div id="sidebar">
+      <div class="sidebar-header" id="sidebarHeader">
+        <div class="sidebar-header-icon" id="sidebarLojaIcon"><i class="ti ti-leaf" id="sidebarLojaIconInner"></i><img id="sidebarLojaImg" src="" style="display:none;"/></div>
+        <div style="min-width:0;overflow:hidden;">
+          <div class="sidebar-header-name" id="sidebarLojaNome">Carregando…</div>
+          <div class="sidebar-header-user" id="sidebarUserInfo"></div>
+        </div>
+      </div>
       <div class="side-btn active" data-tab="home"        onclick="switchTab('home')"><i class="ti ti-home"></i> Início</div>
       <div class="side-btn" data-tab="pedidos"      onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i> Pedidos</div>
       <div class="side-btn" data-tab="compras"      onclick="switchTab('compras')"><i class="ti ti-map-pin"></i> Compras</div>
@@ -389,11 +397,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- HOME -->
       <section id="tab-home">
         <div class="home-hero">
-          <div class="home-hero-bg no-logo" id="homeHeroBg"></div>
-          <div class="home-hero-overlay"></div>
-          <div class="home-hero-leaf"><i class="ti ti-leaf"></i></div>
-          <div class="home-hero-content">
-            <div class="home-loja-icon" id="homeLojoIcon"><i class="ti ti-leaf" id="homeLogoIconInner"></i><img id="homeLogoImg" src="" style="display:none;width:100%;height:100%;object-fit:cover;"/></div>
+          <div class="home-loja-icon" id="homeLojoIcon"><i class="ti ti-leaf" id="homeLogoIconInner"></i><img id="homeLogoImg" src="" style="display:none;"/></div>
+          <div class="home-hero-text">
             <div class="home-loja-name" id="homeLojaName">Carregando…</div>
             <div class="home-meta" id="homeMeta">Bem-vindo ao Hortiz</div>
           </div>
@@ -1457,9 +1462,18 @@ function refreshHeader(){
   const d=new Date(currentDate+'T12:00:00');
   el('headerDate').textContent=d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
   const userInfoEl=el('headerUserInfo');
+  let papel='';
   if(userInfoEl&&currentUser){
-    const papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':'Gerente');
+    papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':'Gerente');
     userInfoEl.textContent=capitalizarNome(currentUser.nome)+' · '+papel;
+  }
+  const sbNome=el('sidebarLojaNome');
+  if(sbNome){
+    sbNome.textContent=loja.nome;
+    if(loja.logo){el('sidebarLojaImg').src=loja.logo;el('sidebarLojaImg').style.display='';el('sidebarLojaIconInner').style.display='none';}
+    else{el('sidebarLojaImg').style.display='none';el('sidebarLojaIconInner').style.display='';}
+    const sbUser=el('sidebarUserInfo');
+    if(sbUser&&currentUser)sbUser.textContent=capitalizarNome(currentUser.nome)+' · '+papel;
   }
   renderHome();
 }
@@ -1471,15 +1485,11 @@ function renderHome(){
   el('homeLojaName').textContent=loja.nome;
   el('homeMeta').textContent=loja.cidade?`📍 ${loja.cidade} · ${formatBR(currentDate)}`:'Bem-vindo ao Hortiz';
 
-  // hero background
-  const heroBg=el('homeHeroBg');
+  // logo da loja (ícone ao lado do nome)
   if(loja.logo){
-    heroBg.style.backgroundImage=`url(${loja.logo})`;
-    heroBg.classList.remove('no-logo');
     el('homeLogoImg').src=loja.logo;el('homeLogoImg').style.display='';
     el('homeLogoIconInner').style.display='none';
   } else {
-    heroBg.style.backgroundImage='';heroBg.classList.add('no-logo');
     el('homeLogoImg').style.display='none';
     el('homeLogoIconInner').style.display='';
   }
