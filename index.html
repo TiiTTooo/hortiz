@@ -385,7 +385,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="relatorios"   onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i> Relatórios</div>
       <div class="side-btn" data-tab="historico"    onclick="switchTab('historico')"><i class="ti ti-history"></i> Compras Realizadas</div>
       <div class="side-btn" data-tab="precos"       onclick="switchTab('precos')"><i class="ti ti-tag"></i> Custo / Preço</div>
-      <div class="side-btn" data-tab="gerenciar"    onclick="switchTab('gerenciar')"><i class="ti ti-adjustments"></i> Gerenciar</div>
+      <div class="side-btn" data-tab="gerenciar"    onclick="switchTab('gerenciar')"><i class="ti ti-adjustments"></i> Gerenciar Produtos e Forn.</div>
       <div class="side-sep"></div>
       <div class="side-btn" data-tab="loja"         onclick="switchTab('loja')" id="sideLoja"><i class="ti ti-building-store"></i> Minha Loja</div>
       <div class="side-btn" data-tab="usuarios"     onclick="switchTab('usuarios')" id="sideUsuarios"><i class="ti ti-users"></i> Usuários</div>
@@ -944,7 +944,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
                 <option value="verdura">🥬 Verdura</option>
               </select>
             </div>
-            <button class="btn-primary btn-w" onclick="adicionarProduto()"><i class="ti ti-plus"></i> Adicionar</button>
+            <div style="display:flex;gap:.5rem;">
+              <button class="btn-primary" id="btnSalvarProduto" onclick="adicionarProduto()" style="flex:1;"><i class="ti ti-plus"></i> Adicionar</button>
+              <button class="btn-ghost" onclick="cancelEditProduto()" id="btnCancelProduto" style="display:none;flex:none;">Cancelar</button>
+            </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">
             <select id="gerProdCatFilter" onchange="renderGerenciarProdutos()" style="flex:1;min-width:110px;">
@@ -985,7 +988,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <div class="field-row">
               <input type="text" id="novoTipoDespesaNome" placeholder="Ex: Pedágio, Uniforme…"/>
             </div>
-            <button class="btn-primary btn-w" onclick="adicionarTipoDespesa()"><i class="ti ti-plus"></i> Adicionar</button>
+            <div style="display:flex;gap:.5rem;">
+              <button class="btn-primary" id="btnSalvarTipoDespesa" onclick="adicionarTipoDespesa()" style="flex:1;"><i class="ti ti-plus"></i> Adicionar</button>
+              <button class="btn-ghost" onclick="cancelEditTipoDespesa()" id="btnCancelTipoDespesa" style="display:none;flex:none;">Cancelar</button>
+            </div>
           </div>
           <div id="listaTiposDespesa"></div>
         </div>
@@ -2731,6 +2737,7 @@ function switchGerenciarView(view){
   if(view==='fornecedores')renderFornecedoresCadastro();
   if(view==='despesas')renderTiposDespesa();
 }
+let editingTipoDespesaId=null;
 async function renderTiposDespesa(){
   const cont=el('listaTiposDespesa');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
@@ -2743,21 +2750,44 @@ async function renderTiposDespesa(){
         <p style="font-size:14px;font-weight:600;">${t.nome}</p>
         <p style="font-size:12px;color:var(--text2);">${t.ativo?'Ativo':'Desativado'}</p>
       </div>
+      <button class="btn-ghost btn-sm" onclick="editTipoDespesa(${t.id},'${t.nome.replace(/'/g,"\\'")}')" title="Editar"><i class="ti ti-edit"></i></button>
       <button class="btn-ghost btn-sm" onclick="alternarTipoDespesaAtivo(${t.id},${!t.ativo})" title="${t.ativo?'Desativar':'Reativar'}"><i class="ti ti-${t.ativo?'eye-off':'eye'}"></i></button>
       <button class="btn-danger-soft btn-sm" onclick="excluirTipoDespesa(${t.id},'${t.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
     </div>`).join('');
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
 }
+function editTipoDespesa(id,nome){
+  editingTipoDespesaId=id;
+  el('novoTipoDespesaNome').value=nome;
+  el('btnSalvarTipoDespesa').innerHTML='<i class="ti ti-device-floppy"></i> Salvar alteração';
+  el('btnCancelTipoDespesa').style.display='';
+  el('novoTipoDespesaNome').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditTipoDespesa(){
+  editingTipoDespesaId=null;
+  el('novoTipoDespesaNome').value='';
+  el('btnSalvarTipoDespesa').innerHTML='<i class="ti ti-plus"></i> Adicionar';
+  el('btnCancelTipoDespesa').style.display='none';
+}
 async function adicionarTipoDespesa(){
   const nome=el('novoTipoDespesaNome').value.trim();
   if(!nome){showToast('Digite o nome do tipo de despesa');return;}
   try{
-    const {error}=await db.from('despesas_tipos').upsert({loja_id:currentLojaId,nome,ativo:true},{onConflict:'loja_id,nome'});
-    if(error){showToast('Erro: '+error.message);return;}
-    el('novoTipoDespesaNome').value='';
-    if(!DESPESAS_TIPO.includes(nome))DESPESAS_TIPO.push(nome);
+    if(editingTipoDespesaId!==null){
+      const {error}=await db.from('despesas_tipos').update({nome}).eq('id',editingTipoDespesaId);
+      if(error){showToast('Erro: '+error.message);return;}
+      showToast(nome+' atualizado!');
+      cancelEditTipoDespesa();
+    } else {
+      const {error}=await db.from('despesas_tipos').upsert({loja_id:currentLojaId,nome,ativo:true},{onConflict:'loja_id,nome'});
+      if(error){showToast('Erro: '+error.message);return;}
+      el('novoTipoDespesaNome').value='';
+      if(!DESPESAS_TIPO.includes(nome))DESPESAS_TIPO.push(nome);
+      showToast(nome+' adicionado!');
+    }
+    const {data}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
+    if(data)DESPESAS_TIPO=data.map(t=>t.nome);
     renderTiposDespesa();
-    showToast(nome+' adicionado!');
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function alternarTipoDespesaAtivo(id,novoStatus){
@@ -3525,6 +3555,7 @@ async function carregarProdutos(){
     PRODUTOS=novo;
   }catch(e){}
 }
+let editingProdutoId=null;
 async function renderGerenciarProdutos(){
   const cont=el('listaGerenciarProdutos');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
@@ -3541,22 +3572,44 @@ async function renderGerenciarProdutos(){
         <p style="font-size:14px;font-weight:600;">${emojis[p.categoria]||''} ${p.nome}</p>
         <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'}</p>
       </div>
+      <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}','${p.categoria}')" title="Editar"><i class="ti ti-edit"></i></button>
       <button class="btn-ghost btn-sm" onclick="alternarProdutoAtivo(${p.id},${!p.ativo})" title="${p.ativo?'Desativar':'Reativar'}"><i class="ti ti-${p.ativo?'eye-off':'eye'}"></i></button>
       <button class="btn-danger-soft btn-sm" onclick="excluirProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
     </div>`).join('');
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar produtos.</div>';}
+}
+function editProduto(id,nome,categoria){
+  editingProdutoId=id;
+  el('novoProdutoNome').value=nome;
+  el('novoProdutoCategoria').value=categoria;
+  el('btnSalvarProduto').innerHTML='<i class="ti ti-device-floppy"></i> Salvar alteração';
+  el('btnCancelProduto').style.display='';
+  el('novoProdutoNome').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditProduto(){
+  editingProdutoId=null;
+  el('novoProdutoNome').value='';
+  el('btnSalvarProduto').innerHTML='<i class="ti ti-plus"></i> Adicionar';
+  el('btnCancelProduto').style.display='none';
 }
 async function adicionarProduto(){
   const nome=el('novoProdutoNome').value.trim();
   const categoria=el('novoProdutoCategoria').value;
   if(!nome){showToast('Digite o nome do produto');return;}
   try{
-    const {error}=await db.from('produtos').upsert({loja_id:currentLojaId,categoria,nome,ativo:true},{onConflict:'loja_id,categoria,nome'});
-    if(error){showToast('Erro: '+error.message);return;}
-    el('novoProdutoNome').value='';
+    if(editingProdutoId!==null){
+      const {error}=await db.from('produtos').update({nome,categoria}).eq('id',editingProdutoId);
+      if(error){showToast('Erro: '+error.message);return;}
+      showToast(nome+' atualizado!');
+      cancelEditProduto();
+    } else {
+      const {error}=await db.from('produtos').upsert({loja_id:currentLojaId,categoria,nome,ativo:true},{onConflict:'loja_id,categoria,nome'});
+      if(error){showToast('Erro: '+error.message);return;}
+      el('novoProdutoNome').value='';
+      showToast(nome+' adicionado!');
+    }
     await carregarProdutos();
     renderGerenciarProdutos();
-    showToast(nome+' adicionado!');
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function alternarProdutoAtivo(id,novoStatus){
