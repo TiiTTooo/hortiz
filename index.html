@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CEASA Compras</title>
+<title>Hortiz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
@@ -25,7 +25,7 @@
   --shadow:0 2px 12px rgba(30,50,80,.10);
 }
 :root{
-  --accent:#3ecf6e;--accent-d:#28a558;--accent-bg:#0f2218;--accent-txt:#021208;
+  --accent:#60a5fa;--accent-d:#2563eb;--accent-bg:#0c1a30;--accent-txt:#00091a;
   --red:#ff5c5c;--red-bg:#2d1414;
   --amber:#ffb830;--amber-bg:#2d2010;
   --blue:#5caaff;--blue-bg:#0f1e2d;
@@ -45,7 +45,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 @media(min-width:560px){.login-box{max-width:460px;}}
 .login-logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700;margin-bottom:1.5rem;}
 .login-logo .ico{width:36px;height:36px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--accent-txt);font-size:20px;}
-.login-logo span{color:var(--accent);}
+.login-logo span.accent{color:var(--accent);}
 .login-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;margin-bottom:1.25rem;}
 .login-tab{flex:1;background:transparent;border:none;color:var(--text2);padding:7px;font-size:13px;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:500;}
 .login-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border2);}
@@ -294,7 +294,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 <!-- ════ LOGIN ════ -->
 <div id="loginScreen" style="display:flex;">
   <div class="login-box">
-    <div class="login-logo"><div class="ico"><i class="ti ti-leaf"></i></div>CEASA <span>Compras</span></div>
+    <div class="login-logo"><div class="ico"><i class="ti ti-leaf"></i></div><span>Hor<span class="accent">Tiz</span></span></div>
     <div class="login-tabs" id="loginTabsBar">
       <button class="login-tab active" onclick="switchLoginTab('login')">Entrar</button>
       <button class="login-tab" onclick="switchLoginTab('register')">Criar conta</button>
@@ -349,7 +349,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="logo">
         <div class="logo-icon" id="headerLogoIcon"><i class="ti ti-leaf"></i></div>
         <div style="min-width:0;overflow:hidden;">
-          <span class="logo-name" id="headerLojaName">CEASA Compras</span>
+          <span class="logo-name" id="headerLojaName">Hortiz</span>
           <div id="headerUserInfo" class="header-user-info"></div>
         </div>
       </div>
@@ -395,7 +395,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="home-hero-content">
             <div class="home-loja-icon" id="homeLojoIcon"><i class="ti ti-leaf" id="homeLogoIconInner"></i><img id="homeLogoImg" src="" style="display:none;width:100%;height:100%;object-fit:cover;"/></div>
             <div class="home-loja-name" id="homeLojaName">Carregando…</div>
-            <div class="home-meta" id="homeMeta">Bem-vindo ao CEASA Compras</div>
+            <div class="home-meta" id="homeMeta">Bem-vindo ao Hortiz</div>
           </div>
         </div>
         <!-- Banner pendentes do dia anterior — aparece apenas se houver -->
@@ -1007,7 +1007,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:2rem 1.75rem;width:100%;max-width:400px;text-align:center;box-shadow:var(--shadow);">
     <div style="width:56px;height:56px;background:var(--red-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:26px;color:var(--red);"><i class="ti ti-lock"></i></div>
     <h2 style="font-size:18px;font-weight:700;margin-bottom:.5rem;">Assinatura necessária</h2>
-    <p style="font-size:13px;color:var(--text2);margin-bottom:1.5rem;" id="subWallMsg">Sua assinatura venceu. Renove para continuar usando o CEASA Compras.</p>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:1.5rem;" id="subWallMsg">Sua assinatura venceu. Renove para continuar usando o Hortiz.</p>
     <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1.25rem;">
       <p style="font-size:22px;font-weight:700;color:var(--accent);" id="subWallPrice">R$ 250<small style="font-size:14px;color:var(--text2);">/mês</small></p>
       <p style="font-size:12px;color:var(--text2);margin-top:4px;">Por loja cadastrada · Cancele quando quiser</p>
@@ -1469,7 +1469,7 @@ function renderHome(){
   verificarPendentesOntem();
   const loja=lojas.find(l=>l.id===currentLojaId)||lojas[0];
   el('homeLojaName').textContent=loja.nome;
-  el('homeMeta').textContent=loja.cidade?`📍 ${loja.cidade} · ${formatBR(currentDate)}`:'Bem-vindo ao CEASA Compras';
+  el('homeMeta').textContent=loja.cidade?`📍 ${loja.cidade} · ${formatBR(currentDate)}`:'Bem-vindo ao Hortiz';
 
   // hero background
   const heroBg=el('homeHeroBg');
@@ -1597,7 +1597,7 @@ function irParaAssinatura(){
 function updateSubStatus(){
   // update sub wall msg
   if(subscription.status==='expired'){
-    const sw=el('subWallMsg');if(sw)sw.textContent='Sua assinatura venceu. Renove para continuar usando o CEASA Compras.';
+    const sw=el('subWallMsg');if(sw)sw.textContent='Sua assinatura venceu. Renove para continuar usando o Hortiz.';
   }
   // update sub trial footer
   const tri=el('subTrialInfo');
@@ -2530,7 +2530,7 @@ async function salvarLoja(){
       cnpj: loja.cnpj||null,
       tel: loja.tel||null,
       logo: loja.logo||null,
-      cor_destaque: loja.cor||'#3ecf6e'
+      cor_destaque: loja.cor||'#60a5fa'
     }).eq('id', targetId);
   }catch(e){ /* silencioso — dados já atualizados localmente */ }
   editingLojaId=null;el('btnCancelLoja').style.display='none';el('lojaFormTitle').textContent='Cadastro da Loja';
@@ -2594,7 +2594,7 @@ function renderLojas(){
 
 /* ── USUÁRIOS (convites de gerente, vinculados a 1 loja) ── */
 function populateInvLoja(){el('invLoja').innerHTML=lojas.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');}
-const APP_URL='https://ceasa-compras.vercel.app/';
+const APP_URL='https://hortiz.vercel.app/';
 async function saveUsuario(){
   const nome=el('invNome').value.trim();const email=el('invEmail').value.trim();
   const telInput=el('invTelefone').value.trim();
@@ -2611,9 +2611,9 @@ async function saveUsuario(){
     }
   }catch(e){showToast('Erro: '+e.message);return;}
 
-  const msg=`Oi, ${nome}! Você foi convidado(a) para gerenciar a loja "${lojaNome}" no CEASA Compras. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente como gerente dessa loja.`;
+  const msg=`Oi, ${nome}! Você foi convidado(a) para gerenciar a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente como gerente dessa loja.`;
   const emailBtn=el('conviteEmailBtn');
-  emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — CEASA Compras')+'&body='+encodeURIComponent(msg);
+  emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — Hortiz')+'&body='+encodeURIComponent(msg);
   const waBtn=el('conviteWhatsBtn');
   if(tel){waBtn.href='https://wa.me/'+tel+'?text='+encodeURIComponent(msg);waBtn.style.display='';}
   else{waBtn.style.display='none';}
@@ -3421,7 +3421,7 @@ async function carregarDadosDaLoja(){
         cnpj: lojaData.cnpj||'',
         tel: lojaData.tel||'',
         logo: lojaData.logo||'',
-        cor: lojaData.cor_destaque||'#3ecf6e'
+        cor: lojaData.cor_destaque||'#60a5fa'
       };
       if(idx===-1) lojas.push(lojaAtual); else lojas[idx]=lojaAtual;
     }
