@@ -332,6 +332,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <p id="regConviteMsg" style="display:none;font-size:12px;color:var(--accent);background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.5rem .625rem;margin-bottom:.75rem;"></p>
       <div class="login-field"><label>Senha</label><input type="password" id="regPass" name="password" placeholder="•••••••• (mín. 6 caracteres)" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()"/></div>
       <button type="submit" class="btn-primary" style="margin-top:.5rem;"><i class="ti ti-user-plus"></i> Criar conta</button>
+      <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:.625rem;">Ao criar conta, você concorda com os <a href="termos-de-uso.html" target="_blank" style="color:var(--accent);">Termos de Uso</a> e a <a href="politica-de-privacidade.html" target="_blank" style="color:var(--accent);">Política de Privacidade</a>.</p>
       <p id="regErro" style="font-size:12px;color:var(--red);text-align:center;margin-top:.625rem;display:none;"></p>
     </form>
   </div>
@@ -743,14 +744,18 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           </div>
         </div>
         <div class="card" id="payCard">
-          <div class="card-label">Assinar agora</div>
-          <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap;">
+          <div class="card-label" id="payCardTitulo">Assinar agora</div>
+          <div id="payCardAssinar" style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap;">
             <button id="btnPlanoMensal" class="btn-primary" onclick="selecionarPlano('mensal')" style="flex:1;">
               <i class="ti ti-calendar-month"></i> Mensal — R$ <span id="valMensalLabel">250</span>/mês
             </button>
             <button id="btnPlanoAnual" class="btn-ghost" onclick="selecionarPlano('anual')" style="flex:1;">
               <i class="ti ti-calendar"></i> Anual — R$ <span id="valAnualLabel">3.000</span>/ano
             </button>
+          </div>
+          <div id="payCardCancelar" style="display:none;">
+            <p style="font-size:13px;color:var(--text2);margin-bottom:.75rem;">Cancelar interrompe a renovação automática imediatamente — o acesso da loja fica bloqueado até assinar de novo.</p>
+            <button class="btn-danger-soft btn-w" onclick="cancelarAssinaturaAtiva()"><i class="ti ti-x"></i> Cancelar assinatura</button>
           </div>
           <div id="payLinkArea" style="display:none;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.875rem;text-align:center;">
             <p style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:.5rem;">Link de pagamento gerado!</p>
@@ -2782,6 +2787,18 @@ function renderAssinatura(){
   const desc=isTrial?`${subscription.trialDaysLeft} dia(s) de teste restante(s)`:isActive?`Vence em ${exp}`:`Vencida em ${exp}`;
   const subIcon=el('subIconBig');const subTitle=el('subStatusTitle');const subDesc=el('subStatusDesc');
   if(subIcon){subIcon.textContent=icon;subTitle.textContent=title;subDesc.textContent=desc;}
+  const titulo=el('payCardTitulo');const assinarDiv=el('payCardAssinar');const cancelarDiv=el('payCardCancelar');
+  if(titulo&&assinarDiv&&cancelarDiv){
+    if(isActive){
+      titulo.textContent='Sua assinatura';
+      assinarDiv.style.display='none';
+      cancelarDiv.style.display='block';
+    } else {
+      titulo.textContent='Assinar agora';
+      assinarDiv.style.display='flex';
+      cancelarDiv.style.display='none';
+    }
+  }
   // list lojas with price
   const listEl=el('lojaSubList');if(!listEl)return;
   listEl.innerHTML=lojas.map(l=>{
@@ -3079,7 +3096,7 @@ async function renderAssinaturasTodasLojas(){
         <div id="payLinkArea-${l.id}" style="display:none;margin-top:.625rem;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.75rem;text-align:center;">
           <p style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:.375rem;">Link de pagamento gerado!</p>
           <a id="payLink-${l.id}" href="#" target="_blank" class="btn-primary btn-sm" style="display:inline-block;text-decoration:none;"><i class="ti ti-external-link"></i> Pagar agora</a>
-        </div>`:''}
+        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.id},'${l.nome.replace(/'/g,"\\'")}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
       </div>`;
     }).join('');
   }catch(e){cont.innerHTML='';}
@@ -3106,6 +3123,46 @@ async function selecionarPlanoLoja(lojaId,plano,btnEl){
   }
 }
 
+async function cancelarAssinaturaLoja(lojaId,nomeLoja){
+  const digitado=prompt('Cancelar a assinatura de "'+nomeLoja+'"? A renovação para imediatamente e o acesso fica bloqueado até assinar de novo.\n\nPra confirmar, digite o nome exato da loja:');
+  if(digitado===null)return;
+  if(digitado.trim().toLowerCase()!==nomeLoja.trim().toLowerCase()){showToast('Nome digitado não confere. Nada foi cancelado.');return;}
+  showToast('Cancelando assinatura…');
+  try{
+    const {data:sessionData}=await db.auth.getSession();
+    const token=sessionData?.session?.access_token;
+    const {data,error}=await db.functions.invoke('smart-service',{body:{loja_id:lojaId,action:'cancelar'},headers:token?{Authorization:'Bearer '+token}:{}});
+    if(error||!data||data.error){
+      const msg=data&&data.error?data.error:await mensagemErroFuncao(error);
+      showToast('Erro ao cancelar: '+msg);
+      return;
+    }
+    showToast('Assinatura cancelada.');
+    if(lojaId===currentLojaId)await checkSubscription();
+    renderAssinaturasTodasLojas();
+  }catch(e){showToast('Erro ao cancelar: '+e.message);}
+}
+async function cancelarAssinaturaAtiva(){
+  const loja=lojas.find(l=>l.id===currentLojaId);
+  const nomeLoja=loja?loja.nome:'esta loja';
+  const digitado=prompt('Cancelar a assinatura de "'+nomeLoja+'"? A renovação para imediatamente e o acesso fica bloqueado até assinar de novo.\n\nPra confirmar, digite o nome exato da loja:');
+  if(digitado===null)return;
+  if(digitado.trim().toLowerCase()!==nomeLoja.trim().toLowerCase()){showToast('Nome digitado não confere. Nada foi cancelado.');return;}
+  showToast('Cancelando assinatura…');
+  try{
+    const {data:sessionData}=await db.auth.getSession();
+    const token=sessionData?.session?.access_token;
+    const {data,error}=await db.functions.invoke('smart-service',{body:{loja_id:currentLojaId,action:'cancelar'},headers:token?{Authorization:'Bearer '+token}:{}});
+    if(error||!data||data.error){
+      const msg=data&&data.error?data.error:await mensagemErroFuncao(error);
+      showToast('Erro ao cancelar: '+msg);
+      return;
+    }
+    showToast('Assinatura cancelada.');
+    await checkSubscription();
+    renderAssinaturasTodasLojas();
+  }catch(e){showToast('Erro ao cancelar: '+e.message);}
+}
 async function selecionarPlano(plano){
   el('btnPlanoMensal').className=plano==='mensal'?'btn-primary':'btn-ghost';
   el('btnPlanoAnual').className=plano==='anual'?'btn-primary':'btn-ghost';
