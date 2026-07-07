@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── THEME TOKENS ── */
@@ -674,6 +676,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
       <!-- RELATÓRIOS -->
       <section id="tab-relatorios" style="display:none;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:.875rem;">
+          <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('categoria')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por categoria</button>
+          <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('produto')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por produto</button>
+        </div>
         <!-- Totalizadores mensais -->
         <div class="stat-grid" style="margin-bottom:.875rem;">
           <div class="stat"><div class="stat-label">🍊 Frutas/mês</div><div class="stat-value" id="rFrutaMes">R$ 0</div></div>
@@ -2900,6 +2906,82 @@ function getWeekBounds(weekIdx,refDate){
   };
 }
 
+function calcRelPorProduto(de,ate){
+  const my=compras.filter(c=>c.lojaId===currentLojaId);
+  const rows=my.filter(c=>{
+    const h=priceHistory.find(x=>x.lojaId===currentLojaId&&x.produto===c.produto&&x.fornecedor===c.fornecedor);
+    const dt=h?h.data:currentDate;
+    return dt>=de&&dt<=ate;
+  });
+  const porProduto={};
+  rows.forEach(c=>{
+    const key=c.categoria+'|'+c.produto;
+    if(!porProduto[key])porProduto[key]={categoria:c.categoria,produto:c.produto,qtd:0,total:0};
+    porProduto[key].qtd+=c.qtd;
+    porProduto[key].total+=c.qtd*c.valorUnit;
+  });
+  return Object.values(porProduto).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.produto.localeCompare(b.produto,'pt-BR'));
+}
+function exportarRelatorioPdf(modo){
+  if(typeof window.jspdf==='undefined'){showToast('A biblioteca de PDF ainda não carregou — espera um instante e tenta de novo.');return;}
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    const loja=lojas.find(l=>l.id===currentLojaId)||{};
+    const mesRef=currentDate.substring(0,7);
+    const [ano,mesN]=mesRef.split('-').map(Number);
+    const meDe=mesRef+'-01';
+    const meAte=mesRef+'-'+String(new Date(ano,mesN,0).getDate()).padStart(2,'0');
+    const MESES_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+    doc.setFontSize(16);
+    doc.text('Hortiz — Relatório de Compras',14,18);
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Loja: ${loja.nome||'-'}`,14,26);
+    doc.text(`Período: ${MESES_PT[mesN-1]} de ${ano}`,14,32);
+    doc.setTextColor(0);
+
+    if(modo==='categoria'){
+      const sems=[0,1,2,3].map(i=>calcRelTotals(getWeekBounds(i,currentDate).start,getWeekBounds(i,currentDate).end));
+      const cats=[{k:'fruta',label:'Frutas'},{k:'legume',label:'Legumes'},{k:'verdura',label:'Verduras'}];
+      const body=cats.map(c=>{
+        const vals=sems.map(s=>s[c.k]);
+        const tot=vals.reduce((a,v)=>a+v,0);
+        return [c.label,...vals.map(v=>fmt(v)),fmt(tot)];
+      });
+      const totalGeral=sems.reduce((a,s)=>a+s.total,0);
+      body.push(['Total',...[0,1,2,3].map(i=>fmt(sems[i].total)),fmt(totalGeral)]);
+      doc.autoTable({
+        startY:40,
+        head:[['Categoria','Semana 1','Semana 2','Semana 3','Semana 4','Total']],
+        body,
+        styles:{fontSize:9},
+        headStyles:{fillColor:[96,165,250]}
+      });
+    } else {
+      const dados=calcRelPorProduto(meDe,meAte);
+      const labelCat={fruta:'Frutas',legume:'Legumes',verdura:'Verduras'};
+      if(!dados.length){
+        doc.setFontSize(11);
+        doc.text('Nenhuma compra registrada nesse mês.',14,46);
+      } else {
+        const body=dados.map(d=>[labelCat[d.categoria]||d.categoria,d.produto,d.qtd,fmt(d.total)]);
+        const totalGeral=dados.reduce((a,d)=>a+d.total,0);
+        body.push(['','','Total',fmt(totalGeral)]);
+        doc.autoTable({
+          startY:40,
+          head:[['Categoria','Produto','Qtd','Total']],
+          body,
+          styles:{fontSize:8},
+          headStyles:{fillColor:[96,165,250]}
+        });
+      }
+    }
+    doc.save(`relatorio-${modo}-${mesRef}.pdf`);
+    showToast('PDF gerado!');
+  }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
+}
 function calcRelTotals(de,ate){
   const my=compras.filter(c=>c.lojaId===currentLojaId);
   // usa priceHistory para data real
