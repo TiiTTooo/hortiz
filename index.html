@@ -528,6 +528,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div id="voltarComprasNormalWrap" style="display:none;margin-bottom:.625rem;">
             <a href="#" onclick="event.preventDefault();voltarComprasNormal()" style="font-size:12px;color:var(--text2);">← Voltar pra visão da loja atual</a>
           </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+            <button class="btn-ghost btn-sm" onclick="exportarRelatorioCompradorPdf()"><i class="ti ti-file-type-pdf"></i> Exportar relatório por loja (PDF)</button>
+          </div>
           <div class="cat-btn-bar" style="display:flex;gap:6px;flex-wrap:wrap;" id="comprCatBtns">
             <button class="cat-btn active" data-cat="fruta" onclick="selecionarCatComprador('fruta')" style="flex:1;min-width:90px;font-size:15px;">🍊 Frutas</button>
             <button class="cat-btn" data-cat="legume" onclick="selecionarCatComprador('legume')" style="flex:1;min-width:90px;font-size:15px;">🥕 Legumes</button>
@@ -1005,6 +1008,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             </select>
             <input type="text" id="gerProdBusca" placeholder="Buscar produto…" oninput="renderGerenciarProdutos()" style="flex:2;min-width:140px;"/>
           </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+            <button class="btn-ghost btn-sm" onclick="exportarProdutosCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
+          </div>
           <div id="listaGerenciarProdutos"></div>
         </div>
 
@@ -1025,6 +1031,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-ghost" onclick="cancelEditForn()" id="btnCancelForn" style="display:none;flex:none;">Cancelar</button>
             </div>
           </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+            <button class="btn-ghost btn-sm" onclick="exportarFornecedoresCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
+          </div>
           <div id="listaFornCadastro"></div>
         </div>
 
@@ -1039,6 +1048,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-primary" id="btnSalvarTipoDespesa" onclick="adicionarTipoDespesa()" style="flex:1;"><i class="ti ti-plus"></i> Adicionar</button>
               <button class="btn-ghost" onclick="cancelEditTipoDespesa()" id="btnCancelTipoDespesa" style="display:none;flex:none;">Cancelar</button>
             </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+            <button class="btn-ghost btn-sm" onclick="exportarDespesasTiposCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
           </div>
           <div id="listaTiposDespesa"></div>
         </div>
@@ -3901,8 +3913,85 @@ function selecionarCatComprador(cat){
   document.querySelectorAll('#comprCatBtns .cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
   renderComprasComprador();
 }
+function baixarCsv(nomeArquivo,linhas){
+  const conteudo=linhas.map(l=>l.map(v=>{
+    const s=String(v??'');
+    return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  }).join(',')).join('\r\n');
+  const blob=new Blob(['\uFEFF'+conteudo],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=nomeArquivo;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function exportarProdutosCsv(){
+  try{
+    const {data,error}=await db.from('produtos').select('nome,categoria').eq('loja_id',currentLojaId).eq('ativo',true).order('categoria').order('nome');
+    if(error){showToast('Erro ao exportar: '+error.message);return;}
+    const linhas=[['nome','categoria'],...(data||[]).map(p=>[p.nome,p.categoria])];
+    baixarCsv('produtos.csv',linhas);
+    showToast('CSV exportado!');
+  }catch(e){showToast('Erro ao exportar: '+e.message);}
+}
+function exportarFornecedoresCsv(){
+  const linhas=[['nome','categoria']];
+  ['fruta','legume','verdura'].forEach(cat=>{(fornCustom[cat]||[]).forEach(f=>linhas.push([f.nome,cat]));});
+  baixarCsv('fornecedores.csv',linhas);
+  showToast('CSV exportado!');
+}
+async function exportarDespesasTiposCsv(){
+  try{
+    const {data,error}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
+    if(error){showToast('Erro ao exportar: '+error.message);return;}
+    const linhas=[['nome'],...(data||[]).map(t=>[t.nome])];
+    baixarCsv('tipos_despesa.csv',linhas);
+    showToast('CSV exportado!');
+  }catch(e){showToast('Erro ao exportar: '+e.message);}
+}
 function normalizarNome(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+async function exportarRelatorioCompradorPdf(){
+  if(typeof window.jspdf==='undefined'){showToast('A biblioteca de PDF ainda não carregou — espera um instante e tenta de novo.');return;}
+  const idsLojas=lojas.map(l=>l.id);
+  if(!idsLojas.length){showToast('Nenhuma loja vinculada.');return;}
+  showToast('Gerando relatório…');
+  try{
+    const {data,error}=await db.from('itens_pedido').select('*').in('loja_id',idsLojas).eq('data',currentDate).eq('status','pendente');
+    if(error){showToast('Erro ao gerar: '+error.message);return;}
+    if(!data||!data.length){showToast('Nenhum pedido pendente nessa data.');return;}
+    const emojisTxt={fruta:'Frutas',legume:'Legumes',verdura:'Verduras'};
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Hortiz — Pedido consolidado por loja',14,18);
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Data: ${formatBR(currentDate)}`,14,26);
+    doc.setTextColor(0);
+    let y=36;
+    lojas.forEach(loja=>{
+      const itensLoja=data.filter(i=>i.loja_id===loja.id).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.produto.localeCompare(b.produto,'pt-BR'));
+      if(!itensLoja.length)return;
+      if(y>260){doc.addPage();y=20;}
+      doc.setFontSize(13);
+      doc.text(loja.nome,14,y);
+      y+=4;
+      const body=itensLoja.map(i=>[emojisTxt[i.categoria]||i.categoria,i.produto,String(i.qtd)+(i.tipo==='caixa'?' cx':' un')]);
+      doc.autoTable({
+        startY:y,
+        head:[['Categoria','Produto','Qtd']],
+        body,
+        styles:{fontSize:9},
+        headStyles:{fillColor:[96,165,250]},
+        margin:{left:14,right:14}
+      });
+      y=doc.lastAutoTable.finalY+10;
+    });
+    doc.save(`pedido-por-loja-${currentDate}.pdf`);
+    showToast('Relatório gerado!');
+  }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
 }
 async function renderComprasComprador(){
   const cont=el('listaComprasComprador');if(!cont)return;
