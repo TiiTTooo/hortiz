@@ -1827,18 +1827,20 @@ function switchTab(tab){
   if(sidebarOpen&&window.matchMedia('(max-width:768px)').matches)toggleSidebar();
   ALL_TABS.forEach(t=>{const s=el('tab-'+t);if(s)s.style.display=t===tab?'':'none';});
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  el('sticky-save').style.display='none';
+  atualizarStickySave();
   if(tab==='relatorios'){setTimeout(()=>{initBarChart();renderRelTotals();},50);}
   if(tab==='precos'){renderPrecosView();}
   if(tab==='gerenciar'){switchGerenciarView(gerenciarViewAtual);}
   if(tab==='historico')renderHistoricoCompras();
 
   if(tab==='pedidos'){
-    switchView(localStorage.getItem('ceasa_pedido_view')||'lista');renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();
+    switchView(localStorage.getItem('ceasa_pedido_view')||'lista');
+    try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){showToast('Erro ao carregar pedidos: '+e.message);}
     const ehPedidos=currentUser&&currentUser.role==='pedidos';
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
     const relSem=el('relatorioSemanalPedidos');
     if(relSem){relSem.style.display=ehPedidos?'block':'none';if(ehPedidos)renderRelatorioSemanalPedidos();}
+    atualizarStickySave();
   }
   if(tab==='master'){renderMaster();}
   if(tab==='compras'){
@@ -1859,6 +1861,11 @@ function switchTab(tab){
 }
 
 /* ── MODO / VIEW ── */
+function atualizarStickySave(){
+  const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
+  const tabelaVisivel=el('view-tabela')&&el('view-tabela').style.display!=='none';
+  const ss=el('sticky-save');if(ss)ss.style.display=(tabAtual==='pedidos'&&tabelaVisivel)?'block':'none';
+}
 function switchModo(modo){
   document.querySelectorAll('[data-modo]').forEach(b=>b.classList.toggle('active',b.dataset.modo===modo));
   el('modo-pedido').style.display=modo==='pedido'?'':'none';
@@ -1870,7 +1877,7 @@ function switchView(view){
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   el('view-lista').style.display=view==='lista'?'':'none';
   el('view-tabela').style.display=view==='tabela'?'':'none';
-  el('sticky-save').style.display=view==='tabela'?'block':'none';
+  atualizarStickySave();
   if(view==='tabela'){renderTabelaGrid();renderPedidoTabela();updateSalvarLabel();}
   localStorage.setItem('ceasa_pedido_view',view);
 }
@@ -2076,7 +2083,8 @@ function switchCatTabela(cat){
   saveDraftFromDOM();currentCatTab=cat;
   document.querySelectorAll('.cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
   const ts=el('tabelaSearch');if(ts)ts.value='';
-  renderTabelaGrid();updateSalvarLabel();
+  try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast('Erro ao montar a tabela: '+e.message);}
+  atualizarStickySave();
 }
 function renderTabelaGrid(){
   const cat=currentCatTab;
@@ -2355,7 +2363,7 @@ function desfazerCompra(id){
     if(pedido){pedido.status='pendente';syncPedidoUpdate(pedido);}
   }
   // Remove do banco
-  try{db.from('compras').delete().eq('id',id);}catch(e){}
+  db.from('compras').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
   renderCompras();renderPendentes();renderNaoComprados();renderPedido();
   showToast('Compra desfeita — item voltou para pendente');
 }
@@ -2436,7 +2444,8 @@ async function salvarFornecedor(){
         fornCustom[foundCat]=fornCustom[foundCat].filter(x=>x.id!==editingFornId);
         if(!fornCustom[cat].find(x=>x.nome===nome))fornCustom[cat].push({id:editingFornId,nome});
       } else {found.nome=nome;}
-      try{await db.from('fornecedores').update({nome,categoria:cat}).eq('id',editingFornId);}catch(e){}
+      const {error}=await db.from('fornecedores').update({nome,categoria:cat}).eq('id',editingFornId);
+      if(error)showToast('Erro ao salvar no banco: '+error.message);
     }
     editingFornId=null;el('fornFormTitle').textContent='Cadastrar fornecedor';el('fornFormBtn').textContent='Adicionar';el('btnCancelForn').style.display='none';
     showToast('Fornecedor atualizado!');
@@ -2492,7 +2501,7 @@ function fornFiltroPeriodo(tipo){
 function removeForn(id,cat){
   fornCustom[cat]=fornCustom[cat].filter(x=>x.id!==id);
   renderFornecedoresCadastro();populateFornecedores('catAvulso','fornAvulsoList');showToast('Fornecedor removido');
-  try{db.from('fornecedores').delete().eq('id',id);}catch(e){}
+  db.from('fornecedores').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
 }
 function renderFornecedoresCadastro(){
   const CAT_LIST=[{k:'fruta',emoji:'🍊',label:'Frutas'},{k:'legume',emoji:'🥕',label:'Legumes'},{k:'verdura',emoji:'🥬',label:'Verduras'}];
@@ -2675,7 +2684,7 @@ function renderDespesas(){
 }
 function removeDespesa(id){
   despesas=despesas.filter(d=>d.id!==id);renderDespesas();showToast('Despesa removida');
-  try{db.from('despesas').delete().eq('id',id);}catch(e){}
+  db.from('despesas').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
 }
 
 /* ── LOJA CADASTRO ── */
@@ -4181,23 +4190,28 @@ async function syncPedidoInsert(item){
       loja_id: item.lojaId, data: item.data, produto: item.produto, categoria: item.categoria,
       qtd: item.qtd, tipo: item.tipo, unid_por_caixa: item.unidPorCaixa, status: item.status
     }).select().single();
-    if(!error && data){
+    if(error){ showToast('Erro ao salvar pedido: '+error.message); return; }
+    if(data){
       // substitui o id temporário pelo id real do banco
       const local = itensPedido.find(i=>i===item);
       if(local) local.id = data.id;
     }
-  }catch(e){ /* silencioso — modo offline */ }
+  }catch(e){ showToast('Erro ao salvar pedido: '+e.message); }
 }
 async function syncPedidoUpdate(item){
   try{
-    await db.from('itens_pedido').update({
+    const {error}=await db.from('itens_pedido').update({
       produto: item.produto, categoria: item.categoria, qtd: item.qtd,
       tipo: item.tipo, unid_por_caixa: item.unidPorCaixa, status: item.status
     }).eq('id', item.id);
-  }catch(e){ /* silencioso */ }
+    if(error)showToast('Erro ao atualizar pedido: '+error.message);
+  }catch(e){ showToast('Erro ao atualizar pedido: '+e.message); }
 }
 async function syncPedidoDelete(id){
-  try{ await db.from('itens_pedido').delete().eq('id', id); }catch(e){ /* silencioso */ }
+  try{
+    const {error}=await db.from('itens_pedido').delete().eq('id', id);
+    if(error)showToast('Erro ao remover pedido: '+error.message);
+  }catch(e){ showToast('Erro ao remover pedido: '+e.message); }
 }
 async function syncCompraInsert(compra, itemPedidoId){
   try{
@@ -4206,19 +4220,21 @@ async function syncCompraInsert(compra, itemPedidoId){
       produto: compra.produto, categoria: compra.categoria, qtd: compra.qtd,
       valor_unit: compra.valorUnit, fornecedor: compra.fornecedor, pagamento: compra.pagamento
     }).select().single();
-    if(!error && data){
+    if(error){ showToast('Erro ao salvar compra: '+error.message); return; }
+    if(data){
       const local = compras.find(c=>c===compra);
       if(local) local.id = data.id;
     }
-  }catch(e){ /* silencioso */ }
+  }catch(e){ showToast('Erro ao salvar compra: '+e.message); }
 }
 async function syncCompraUpdate(compra){
   try{
-    await db.from('compras').update({
+    const {error}=await db.from('compras').update({
       qtd: compra.qtd, valor_unit: compra.valorUnit,
       fornecedor: compra.fornecedor, pagamento: compra.pagamento
     }).eq('id', compra.id);
-  }catch(e){ /* silencioso */ }
+    if(error)showToast('Erro ao atualizar compra: '+error.message);
+  }catch(e){ showToast('Erro ao atualizar compra: '+e.message); }
 }
 
 function init(){
@@ -4315,7 +4331,7 @@ async function aplicarMargemTodos(){
 }
 async function limparMargensCustom(){
   margemCustom={};renderPrecosMedia();showToast('Margens personalizadas resetadas');
-  try{await db.from('margens_custom').delete().eq('loja_id',currentLojaId);}catch(e){}
+  const {error:_e1}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId);if(_e1)showToast('Erro ao resetar no banco: '+_e1.message);
 }
 let precosViewAtual='margem';
 function switchPrecosView(view){
@@ -4500,7 +4516,7 @@ async function precosSalvar(pid){
   } else {
     delete margemCustom[prod];
     showToast('Margem de "'+prod+'" resetada');
-    try{await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);}catch(e){}
+    const {error:_e2}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e2)showToast('Erro ao resetar no banco: '+_e2.message);
     renderPrecosMedia();return;
   }
   try{
@@ -4517,7 +4533,7 @@ async function precosResetar(pid){
   delete margemCustom[prod];
   renderPrecosMedia();
   showToast('Margem resetada para o padrão global');
-  try{await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);}catch(e){}
+  const {error:_e3}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e3)showToast('Erro ao resetar no banco: '+_e3.message);
 }
 
 window.addEventListener('load',async function(){
