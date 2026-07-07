@@ -390,6 +390,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="gerenciar"    onclick="switchTab('gerenciar')"><i class="ti ti-adjustments"></i> Gerenciar Produtos e Forn.</div>
       <div class="side-sep"></div>
       <div class="side-btn" data-tab="loja"         onclick="switchTab('loja')" id="sideLoja"><i class="ti ti-building-store"></i> Minha Loja</div>
+      <div class="side-btn" data-tab="consolidado" onclick="switchTab('consolidado')" id="sideConsolidado" style="display:none;"><i class="ti ti-stack-2"></i> Visão Consolidada</div>
       <div class="side-btn" data-tab="usuarios"     onclick="switchTab('usuarios')" id="sideUsuarios"><i class="ti ti-users"></i> Usuários</div>
       <div class="side-btn" data-tab="assinatura"   onclick="switchTab('assinatura')" id="sideAssinatura"><i class="ti ti-credit-card"></i> Assinatura</div>
       <div class="side-btn" data-tab="master" onclick="switchTab('master')" id="sideMaster" style="display:none;color:var(--amber);"><i class="ti ti-crown"></i> Master</div>
@@ -439,9 +440,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
       <!-- PEDIDOS -->
       <section id="tab-pedidos" style="display:none;">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;" id="pedidosGerenciarBtnWrap">
           <button class="btn-ghost btn-sm" onclick="switchTab('gerenciar');switchGerenciarView('produtos')"><i class="ti ti-adjustments"></i> Gerenciar produtos</button>
         </div>
+        <div id="relatorioSemanalPedidos" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1rem;"></div>
         <div style="margin-bottom:1rem;">
           <p style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:.5rem;">📅 Data do pedido</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -748,7 +750,18 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
         </div>
       </section>
 
-      <!-- ASSINATURA -->
+      <!-- VISÃO CONSOLIDADA (dono com mais de uma loja) -->
+      <section id="tab-consolidado" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;gap:8px;flex-wrap:wrap;">
+          <p style="font-size:13px;color:var(--text2);margin:0;">Total pendente de todas as suas lojas, pra fazer a compra de uma vez</p>
+          <button class="btn-ghost btn-sm" onclick="exportarConsolidadoPdf()"><i class="ti ti-file-type-pdf"></i> Exportar PDF por loja</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.875rem;">
+          <input type="date" id="consolidadoData" onchange="currentDate=this.value;renderConsolidado()" style="flex:1;"/>
+        </div>
+        <div id="consolidadoLista"></div>
+      </section>
+
       <!-- ASSINATURA -->
       <section id="tab-assinatura" style="display:none;">
         <div class="card" style="text-align:center;padding:1.5rem;">
@@ -1026,13 +1039,19 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- USUÁRIOS -->
       <section id="tab-usuarios" style="display:none;">
         <div class="card" id="userFormCard">
-          <div class="card-label">Convidar gerente</div>
+          <div class="card-label">Convidar pessoa da equipe</div>
           <p style="font-size:12px;color:var(--text2);margin-bottom:.625rem;">A pessoa convidada só vai enxergar a loja escolhida abaixo. Depois de convidar, peça pra ela se cadastrar normalmente na tela de login usando o mesmo e-mail.</p>
           <div class="field-row">
             <input id="invNome" placeholder="Nome"/>
             <input id="invEmail" type="email" placeholder="E-mail"/>
+          </div>
+          <div class="field-row">
             <input id="invTelefone" type="tel" placeholder="WhatsApp (opcional) — Ex: 11999998888"/>
             <select id="invLoja"></select>
+            <select id="invPapel">
+              <option value="manager">Gerente (acesso completo da loja)</option>
+              <option value="pedidos">Apenas Pedidos (só lança pedido)</option>
+            </select>
           </div>
           <button class="btn-primary" onclick="saveUsuario()"><i class="ti ti-send"></i> Enviar convite</button>
           <div id="conviteEnviarArea" style="display:none;margin-top:.75rem;padding:.75rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);">
@@ -1326,7 +1345,8 @@ async function verificarConviteRegistro(){
       conviteDetectado=data;
       lojaField.style.display='none';
       msgEl.style.display='block';
-      msgEl.textContent='✅ Convite encontrado! Você vai entrar como gerente de "'+((data.lojas&&data.lojas.nome)||'loja')+'".';
+      const papelTxt=data.role==='pedidos'?'pessoa de pedidos':'gerente';
+      msgEl.textContent='✅ Convite encontrado! Você vai entrar como '+papelTxt+' de "'+((data.lojas&&data.lojas.nome)||'loja')+'".';
     } else {
       conviteDetectado=null;lojaField.style.display='';msgEl.style.display='none';
     }
@@ -1420,12 +1440,22 @@ async function carregarPerfilEEntrar(userId){
 async function enterApp(){
   el('loginScreen').style.display='none';
   el('appShell').style.display='flex';el('appShell').style.flexDirection='column';
-  if(currentUser.role==='manager'&&currentUser.lojaId){currentLojaId=currentUser.lojaId;}
+  if((currentUser.role==='manager'||currentUser.role==='pedidos')&&currentUser.lojaId){currentLojaId=currentUser.lojaId;}
   const ehGerente=currentUser.role==='manager';
+  const ehPedidos=currentUser.role==='pedidos';
   el('sideUsuarios').style.display=ehGerente?'none':'';
   el('sideAssinatura').style.display=ehGerente?'none':'';
   el('sideLoja').style.display=ehGerente?'none':'';
   await carregarMinhasLojas();
+  el('sideConsolidado').style.display=(!ehGerente&&!ehPedidos&&lojas.length>1)?'':'none';
+  if(ehPedidos){
+    document.querySelectorAll('.side-btn').forEach(btn=>{
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos')?'':'none';
+    });
+    document.querySelectorAll('.nav-btn').forEach(btn=>{
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos')?'':'none';
+    });
+  }
   refreshHeader();
   await carregarDadosDaLoja();
   init();
@@ -1523,7 +1553,7 @@ function refreshHeader(){
   const userInfoEl=el('headerUserInfo');
   let papel='';
   if(userInfoEl&&currentUser){
-    papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':'Gerente');
+    papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':currentUser.role==='pedidos'?'Apenas Pedidos':'Gerente');
     userInfoEl.textContent=capitalizarNome(currentUser.nome)+' · '+papel;
   }
   const sbNome=el('sidebarLojaNome');
@@ -1651,7 +1681,7 @@ async function checkSubscription(){
   }catch(e){}
   atualizarLabelsPreco();
   updateSubStatus();
-  const souGerente=currentUser&&currentUser.role==='manager';
+  const souGerente=currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
     if(souGerente){
@@ -1669,7 +1699,7 @@ async function checkSubscription(){
   atualizarBloqueioMenu();
 }
 function atualizarBloqueioMenu(){
-  const bloquear=acessoOperacionalBloqueado&&currentUser&&currentUser.role==='manager';
+  const bloquear=acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
   document.querySelectorAll('[data-tab="pedidos"],[data-tab="compras"]').forEach(btn=>{
     btn.style.opacity=bloquear?'.4':'';
     btn.title=bloquear?'Assinatura vencida — acesso bloqueado':'';
@@ -1759,10 +1789,14 @@ function renderPrecoHistorico(){
 }
 
 /* ── ALL TABS ── */
-const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
+const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','consolidado','usuarios','assinatura','master'];
 function switchTab(tab){
-  if(acessoOperacionalBloqueado&&currentUser&&currentUser.role==='manager'&&(tab==='pedidos'||tab==='compras')){
+  if(acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos')&&(tab==='pedidos'||tab==='compras')){
     showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
+    return;
+  }
+  if(currentUser&&currentUser.role==='pedidos'&&tab!=='home'&&tab!=='pedidos'){
+    showToast('Seu acesso é só pra fazer pedidos.');
     return;
   }
   if(sidebarOpen&&window.matchMedia('(max-width:768px)').matches)toggleSidebar();
@@ -1772,9 +1806,16 @@ function switchTab(tab){
   if(tab==='relatorios'){setTimeout(()=>{initBarChart();renderRelTotals();},50);}
   if(tab==='precos'){renderPrecosView();}
   if(tab==='gerenciar'){switchGerenciarView(gerenciarViewAtual);}
+  if(tab==='consolidado'){const cd=el('consolidadoData');if(cd)cd.value=currentDate;renderConsolidado();}
   if(tab==='historico')renderHistoricoCompras();
 
-  if(tab==='pedidos'){switchView(localStorage.getItem('ceasa_pedido_view')||'lista');renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}
+  if(tab==='pedidos'){
+    switchView(localStorage.getItem('ceasa_pedido_view')||'lista');renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();
+    const ehPedidos=currentUser&&currentUser.role==='pedidos';
+    const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
+    const relSem=el('relatorioSemanalPedidos');
+    if(relSem){relSem.style.display=ehPedidos?'block':'none';if(ehPedidos)renderRelatorioSemanalPedidos();}
+  }
   if(tab==='master'){renderMaster();}
   if(tab==='compras'){renderPendentes();renderNaoComprados();renderCompras();refreshHeadings();}
   if(tab==='loja'){editingLojaId=null;renderLojas();loadLojaForm(currentLojaId);}
@@ -2706,19 +2747,21 @@ async function saveUsuario(){
   const nome=el('invNome').value.trim();const email=el('invEmail').value.trim();
   const telInput=el('invTelefone').value.trim();
   const lojaId=parseInt(el('invLoja').value);
+  const papel=el('invPapel').value;
   if(!nome||!email||!lojaId){showToast('Preencha nome, e-mail e loja');return;}
   const lojaNome=(lojas.find(l=>l.id===lojaId)||{}).nome||'sua loja';
   let tel=telInput.replace(/\D/g,'');
   if(tel&&!tel.startsWith('55'))tel='55'+tel;
   try{
-    const {error}=await db.from('convites_usuario').insert({email,telefone:telInput||null,loja_id:lojaId,role:'manager',criado_por:currentUser.id});
+    const {error}=await db.from('convites_usuario').insert({email,telefone:telInput||null,loja_id:lojaId,role:papel,criado_por:currentUser.id});
     if(error){
       showToast(error.code==='23505'?'Já existe um convite pendente pra esse e-mail nessa loja':'Erro: '+error.message);
       return;
     }
   }catch(e){showToast('Erro: '+e.message);return;}
 
-  const msg=`Oi, ${nome}! Você foi convidado(a) para gerenciar a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente como gerente dessa loja.`;
+  const descPapel=papel==='pedidos'?'lançar pedidos':'gerenciar';
+  const msg=`Oi, ${nome}! Você foi convidado(a) para ${descPapel} a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente.`;
   const emailBtn=el('conviteEmailBtn');
   emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — Hortiz')+'&body='+encodeURIComponent(msg);
   const waBtn=el('conviteWhatsBtn');
@@ -2743,7 +2786,7 @@ async function renderUsuarios(){
   try{
     const lojaIds=lojas.map(l=>l.id);
     const [{data:gerentes},{data:convites}]=await Promise.all([
-      lojaIds.length?db.from('perfis').select('*').in('loja_id',lojaIds).eq('role','manager'):Promise.resolve({data:[]}),
+      lojaIds.length?db.from('perfis').select('*').in('loja_id',lojaIds).in('role',['manager','pedidos']):Promise.resolve({data:[]}),
       db.from('convites_usuario').select('*, lojas(nome)').eq('criado_por',currentUser.id).order('created_at',{ascending:false})
     ]);
     let html='';
@@ -2751,6 +2794,7 @@ async function renderUsuarios(){
       const lojaNome=(lojas.find(l=>l.id===g.loja_id)||{}).nome||'—';
       const nomeEscapado=(g.nome||'').replace(/'/g,"\\'");
       const opcoesLoja=lojas.map(l=>`<option value="${l.id}"${l.id===g.loja_id?' selected':''}>${l.nome}</option>`).join('');
+      const ehPedidos=g.role==='pedidos';
       html+=`<div class="data-card">
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${g.nome}</p>
@@ -2758,22 +2802,23 @@ async function renderUsuarios(){
           <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${lojaNome}</p>
           ${lojas.length>1?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
         </div>
-        ${badge('badge-manager','Gerente')}
-        ${lojas.length>1?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="Editar loja do gerente"><i class="ti ti-edit"></i></button>`:''}
+        ${badge(ehPedidos?'badge-owner':'badge-manager',ehPedidos?'Apenas Pedidos':'Gerente')}
+        ${lojas.length>1?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="Editar loja"><i class="ti ti-edit"></i></button>`:''}
         <button class="btn-danger-soft btn-sm" onclick="removerGerente('${g.id}','${nomeEscapado}')" title="Remover acesso"><i class="ti ti-trash"></i></button>
       </div>`;
     });
     (convites||[]).filter(c=>!c.usado).forEach(c=>{
       const lojaNome=(c.lojas&&c.lojas.nome)||'—';
+      const rotuloPapel=c.role==='pedidos'?'Apenas Pedidos':'Gerente';
       html+=`<div class="data-card" style="opacity:.8;">
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${c.email}</p>
-          <p style="font-size:12px;color:var(--amber);">⏳ Convite pendente · ${lojaNome}${c.telefone?' · '+c.telefone:''}</p>
+          <p style="font-size:12px;color:var(--amber);">⏳ Convite pendente (${rotuloPapel}) · ${lojaNome}${c.telefone?' · '+c.telefone:''}</p>
         </div>
         <button class="btn-danger-soft btn-sm" onclick="cancelarConvite(${c.id})" title="Cancelar convite"><i class="ti ti-x"></i></button>
       </div>`;
     });
-    cont.innerHTML=html||'<div class="empty">Nenhum gerente ou convite ainda.</div>';
+    cont.innerHTML=html||'<div class="empty">Nenhuma pessoa na equipe ou convite ainda.</div>';
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar equipe.</div>';}
 }
 
@@ -3747,6 +3792,98 @@ async function carregarProdutos(){
   }catch(e){}
 }
 let editingProdutoId=null;
+async function renderRelatorioSemanalPedidos(){
+  const cont=el('relatorioSemanalPedidos');if(!cont)return;
+  cont.innerHTML='<p style="font-size:13px;color:var(--text3);">Carregando…</p>';
+  try{
+    const hoje=new Date(currentDate+'T12:00:00');
+    const seteAtras=new Date(hoje);seteAtras.setDate(hoje.getDate()-6);
+    const de=seteAtras.toISOString().split('T')[0];
+    const {data,error}=await db.from('itens_pedido').select('*').eq('loja_id',currentLojaId).gte('data',de).lte('data',currentDate);
+    if(error){cont.innerHTML='<p style="font-size:13px;color:var(--red);">Erro ao carregar relatório.</p>';return;}
+    const porProduto={};
+    (data||[]).forEach(item=>{
+      const key=item.categoria+'|'+item.produto;
+      if(!porProduto[key])porProduto[key]={categoria:item.categoria,produto:item.produto,qtd:0};
+      porProduto[key].qtd+=item.qtd;
+    });
+    const linhas=Object.values(porProduto).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.produto.localeCompare(b.produto,'pt-BR'));
+    const emojis={fruta:'🍊',legume:'🥕',verdura:'🥬'};
+    cont.innerHTML=`<p style="font-size:13px;font-weight:700;margin-bottom:.625rem;">📋 Quantidade pedida — últimos 7 dias (${formatBR(de)} a ${formatBR(currentDate)})</p>`+
+      (linhas.length?linhas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border);"><span>${emojis[l.categoria]||''} ${l.produto}</span><strong>${l.qtd}</strong></div>`).join(''):'<p style="font-size:12px;color:var(--text2);">Nenhum pedido nesses 7 dias.</p>');
+  }catch(e){cont.innerHTML='<p style="font-size:13px;color:var(--red);">Erro ao carregar relatório.</p>';}
+}
+async function renderConsolidado(){
+  const cont=el('consolidadoLista');if(!cont)return;
+  cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
+  try{
+    const idsLojas=lojas.map(l=>l.id);
+    const {data,error}=await db.from('itens_pedido').select('*').in('loja_id',idsLojas).eq('data',currentDate).eq('status','pendente');
+    if(error){cont.innerHTML='<div class="empty">Erro ao carregar: '+error.message+'</div>';return;}
+    const porProduto={};
+    (data||[]).forEach(item=>{
+      const key=item.categoria+'|'+item.produto;
+      if(!porProduto[key])porProduto[key]={categoria:item.categoria,produto:item.produto,total:0,porLoja:{}};
+      porProduto[key].total+=item.qtd;
+      porProduto[key].porLoja[item.loja_id]=(porProduto[key].porLoja[item.loja_id]||0)+item.qtd;
+    });
+    const linhas=Object.values(porProduto).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.produto.localeCompare(b.produto,'pt-BR'));
+    window._consolidadoData=linhas;
+    if(!linhas.length){cont.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Nenhum pedido pendente nessa data, em nenhuma das suas lojas.</div>';return;}
+    const emojis={fruta:'🍊',legume:'🥕',verdura:'🥬'};
+    cont.innerHTML=linhas.map((l,idx)=>`
+      <div class="data-card" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <p style="font-size:14px;font-weight:600;">${emojis[l.categoria]||''} ${l.produto}</p>
+          <p style="font-size:15px;font-weight:700;color:var(--accent);">${l.total}</p>
+        </div>
+        <a href="#" onclick="event.preventDefault();toggleDetalheConsolidado(${idx})" style="font-size:11px;color:var(--text2);text-decoration:underline;margin-top:2px;">detalhes</a>
+        <div id="detalheConsolidado-${idx}" style="display:none;margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
+          ${Object.entries(l.porLoja).map(([lojaId,qtd])=>{
+            const loja=lojas.find(x=>x.id===parseInt(lojaId));
+            return `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>${loja?loja.nome:'Loja '+lojaId}</span><span>${qtd}</span></div>`;
+          }).join('')}
+        </div>
+      </div>`).join('');
+  }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
+}
+function toggleDetalheConsolidado(idx){
+  const d=document.getElementById('detalheConsolidado-'+idx);
+  if(d)d.style.display=d.style.display==='none'?'block':'none';
+}
+function exportarConsolidadoPdf(){
+  if(typeof window.jspdf==='undefined'){showToast('A biblioteca de PDF ainda não carregou — espera um instante e tenta de novo.');return;}
+  const linhas=window._consolidadoData||[];
+  if(!linhas.length){showToast('Nada pra exportar nessa data.');return;}
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Hortiz — Consolidado de Pedidos',14,18);
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Data: ${formatBR(currentDate)}`,14,26);
+    doc.setTextColor(0);
+    const emojisTxt={fruta:'Frutas',legume:'Legumes',verdura:'Verduras'};
+    const body=[];
+    linhas.forEach(l=>{
+      body.push([emojisTxt[l.categoria]||l.categoria,l.produto,String(l.total)]);
+      Object.entries(l.porLoja).forEach(([lojaId,qtd])=>{
+        const loja=lojas.find(x=>x.id===parseInt(lojaId));
+        body.push(['','   ↳ '+(loja?loja.nome:'Loja '+lojaId),String(qtd)]);
+      });
+    });
+    doc.autoTable({
+      startY:34,
+      head:[['Categoria','Produto / Loja','Qtd']],
+      body,
+      styles:{fontSize:8},
+      headStyles:{fillColor:[96,165,250]}
+    });
+    doc.save(`consolidado-pedidos-${currentDate}.pdf`);
+    showToast('PDF gerado!');
+  }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
+}
 async function renderGerenciarProdutos(){
   const cont=el('listaGerenciarProdutos');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
