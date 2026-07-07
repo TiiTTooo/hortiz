@@ -421,7 +421,14 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="quick-card" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i><span>Fornecedores</span></div>
           <div class="quick-card" onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
         </div>
-        <div class="home-section"><i class="ti ti-chart-pie"></i> Resumo do mês por categoria</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+          <div class="home-section" style="margin:0;"><i class="ti ti-chart-pie"></i> Resumo do mês por categoria</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button class="btn-icon" onclick="mudarHomeMes(-1)" title="Mês anterior"><i class="ti ti-chevron-left"></i></button>
+            <span id="homeMesLabel" style="font-size:12px;color:var(--text2);min-width:90px;text-align:center;"></span>
+            <button class="btn-icon" onclick="mudarHomeMes(1)" title="Próximo mês"><i class="ti ti-chevron-right"></i></button>
+          </div>
+        </div>
         <div class="home-pie-wrap">
           <div style="width:220px;height:220px;flex-shrink:0;position:relative;"><canvas id="homePie"></canvas></div>
           <div class="home-pie-legend" id="homePieLegend"></div>
@@ -499,6 +506,19 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <i class="ti ti-clipboard-list"></i> Ver pedido
           </button>
         </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.625rem;">
+          <button class="btn-ghost btn-sm" onclick="navegarDiaCompra(-1)" title="Dia anterior com pedido" style="flex-shrink:0;"><i class="ti ti-chevron-left"></i></button>
+          <span style="flex:1;text-align:center;font-size:12px;color:var(--text2);">Navegar entre dias com pedido registrado</span>
+          <button class="btn-ghost btn-sm" onclick="navegarDiaCompra(1)" title="Próximo dia com pedido" style="flex-shrink:0;"><i class="ti ti-chevron-right"></i></button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.875rem;">
+          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(0)">Semana 1</button>
+          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(1)">Semana 2</button>
+          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(2)">Semana 3</button>
+          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(3)">Semana 4</button>
+        </div>
+        <div id="resumoSemanaCompras" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.875rem 1rem;margin-bottom:1rem;"></div>
 
         <!-- Sub-abas da aba Compras -->
         <div class="seg-tabs" style="margin-bottom:1rem;">
@@ -1029,9 +1049,6 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
     <button class="nav-btn"        data-tab="pedidos"     onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i><span>Pedidos</span></button>
     <button class="nav-btn"        data-tab="compras"     onclick="switchTab('compras')"><i class="ti ti-map-pin"></i><span>Compras</span></button>
     <button class="nav-btn"        data-tab="despesas"    onclick="switchTab('despesas')"><i class="ti ti-receipt"></i><span>Despesas</span></button>
-    <button class="nav-btn"        data-tab="fornecedores" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i><span>Fornec.</span></button>
-    <button class="nav-btn"        data-tab="relatorios"  onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i><span>Relatórios</span></button>
-    <button class="nav-btn"        data-tab="historico"   onclick="switchTab('historico')"><i class="ti ti-history"></i><span>Realizadas</span></button>
     <button class="nav-btn"        data-tab="precos"      onclick="switchTab('precos')"><i class="ti ti-tag"></i><span>Preços</span></button>
   </nav>
 
@@ -1515,6 +1532,17 @@ function refreshHeader(){
 }
 
 /* ── HOME ── */
+let homeResumoAno,homeResumoMes;
+function mudarHomeMes(delta){
+  if(homeResumoAno===undefined||homeResumoMes===undefined){
+    const d0=new Date(currentDate+'T12:00:00');
+    homeResumoAno=d0.getFullYear();homeResumoMes=d0.getMonth();
+  }
+  homeResumoMes+=delta;
+  if(homeResumoMes<0){homeResumoMes=11;homeResumoAno--;}
+  if(homeResumoMes>11){homeResumoMes=0;homeResumoAno++;}
+  renderHome();
+}
 function renderHome(){
   verificarPendentesOntem();
   const loja=lojas.find(l=>l.id===currentLojaId)||lojas[0];
@@ -1530,8 +1558,20 @@ function renderHome(){
     el('homeLogoIconInner').style.display='';
   }
 
+  // navegação de mês
+  if(homeResumoAno===undefined||homeResumoMes===undefined){
+    const d0=new Date(currentDate+'T12:00:00');
+    homeResumoAno=d0.getFullYear();homeResumoMes=d0.getMonth();
+  }
+  const MESES_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  el('homeMesLabel').textContent=MESES_PT[homeResumoMes]+'/'+homeResumoAno;
+
   // pie
-  const myCompras=compras.filter(c=>c.lojaId===currentLojaId);
+  const myCompras=compras.filter(c=>{
+    if(c.lojaId!==currentLojaId||!c.data)return false;
+    const [y,m]=c.data.split('-').map(Number);
+    return y===homeResumoAno&&(m-1)===homeResumoMes;
+  });
   const totF=myCompras.filter(c=>c.categoria==='fruta').reduce((a,c)=>a+c.qtd*c.valorUnit,0);
   const totL=myCompras.filter(c=>c.categoria==='legume').reduce((a,c)=>a+c.qtd*c.valorUnit,0);
   const totV=myCompras.filter(c=>c.categoria==='verdura').reduce((a,c)=>a+c.qtd*c.valorUnit,0);
@@ -1762,6 +1802,38 @@ function refreshHeadings(){
 }
 function onDateChange(){currentDate=el('pedidoData').value||todayStr();refreshHeadings();renderHistorico();renderAll();const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;}
 function onHistoricoChange(){const v=el('historicoSelect').value;if(v){currentDate=v;el('pedidoData').value=v;refreshHeadings();renderAll();}}
+function navegarDiaCompra(delta){
+  const datasComPedido=[...new Set(itensPedido.filter(p=>p.lojaId===currentLojaId).map(p=>p.data))].sort();
+  if(!datasComPedido.length){showToast('Nenhum dia com pedido registrado ainda.');return;}
+  if(delta>0){
+    const proxima=datasComPedido.find(d=>d>currentDate);
+    if(!proxima){showToast('Esse já é o dia mais recente com pedido.');return;}
+    el('pedidoData').value=proxima;
+  } else {
+    const anteriores=datasComPedido.filter(d=>d<currentDate);
+    if(!anteriores.length){showToast('Esse já é o dia mais antigo com pedido.');return;}
+    el('pedidoData').value=anteriores[anteriores.length-1];
+  }
+  onDateChange();
+}
+function buscarSemanaCompras(idx){
+  const {start,end,label}=getWeekBounds(idx,currentDate);
+  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data>=start&&c.data<=end);
+  const tot={fruta:0,legume:0,verdura:0};
+  my.forEach(c=>{tot[c.categoria]=(tot[c.categoria]||0)+c.qtd*c.valorUnit;});
+  const total=(tot.fruta||0)+(tot.legume||0)+(tot.verdura||0);
+  const cont=el('resumoSemanaCompras');
+  cont.style.display='block';
+  cont.innerHTML=`
+    <p style="font-size:13px;font-weight:700;margin-bottom:.625rem;">📅 ${label}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:.5rem;font-size:13px;">
+      <div>🍊 Frutas<br><strong>${fmt(tot.fruta||0)}</strong></div>
+      <div>🥕 Legumes<br><strong>${fmt(tot.legume||0)}</strong></div>
+      <div>🥬 Verduras<br><strong>${fmt(tot.verdura||0)}</strong></div>
+      <div style="color:var(--accent);">Total<br><strong>${fmt(total)}</strong></div>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-top:.5rem;">${my.length} compra(s) registrada(s) nesse período.</p>`;
+}
 function renderHistorico(){
   const my=itensPedido.filter(i=>i.lojaId===currentLojaId);
   const datas=[...new Set(my.map(i=>i.data))];
