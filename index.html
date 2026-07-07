@@ -232,7 +232,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 .sh::after{content:'';flex:1;height:1px;background:var(--border);}
 
 /* ── STICKY SAVE ── */
-#sticky-save{position:sticky;bottom:60px;padding:10px 1rem 4px;background:linear-gradient(0deg,var(--bg) 60%,transparent);z-index:95;display:none;}
+#sticky-save{position:sticky;bottom:0;padding:10px 1rem 4px;background:linear-gradient(0deg,var(--bg) 70%,transparent);z-index:10;display:none;}
 #sticky-save button{display:flex;}
 
 /* ── MODAL OVERLAY ── */
@@ -1075,6 +1075,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
         <div id="listaUsuarios"></div>
       </section>
 
+      <div id="sticky-save">
+        <button class="btn-primary" onclick="salvarTabela()"><i class="ti ti-device-floppy"></i> <span id="salvarLabel">Salvar pedido</span></button>
+      </div>
     </main>
   </div>
 
@@ -1086,9 +1089,6 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
     <button class="nav-btn"        data-tab="precos"      onclick="switchTab('precos')"><i class="ti ti-tag"></i><span>Preços</span></button>
   </nav>
 
-  <div id="sticky-save">
-    <button class="btn-primary" onclick="salvarTabela()"><i class="ti ti-device-floppy"></i> <span id="salvarLabel">Salvar pedido</span></button>
-  </div>
 </div>
 
 <!-- SUBSCRIPTION WALL -->
