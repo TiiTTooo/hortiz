@@ -3901,6 +3901,9 @@ function selecionarCatComprador(cat){
   document.querySelectorAll('#comprCatBtns .cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
   renderComprasComprador();
 }
+function normalizarNome(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
 async function renderComprasComprador(){
   const cont=el('listaComprasComprador');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
@@ -3911,7 +3914,7 @@ async function renderComprasComprador(){
     if(error){cont.innerHTML='<div class="empty">Erro ao carregar: '+error.message+'</div>';return;}
     const porProduto={};
     (data||[]).forEach(item=>{
-      const key=item.produto;
+      const key=normalizarNome(item.produto);
       if(!porProduto[key])porProduto[key]={categoria:item.categoria,produto:item.produto,tipo:item.tipo,unidPorCaixa:item.unid_por_caixa,total:0,origens:[]};
       porProduto[key].total+=item.qtd;
       porProduto[key].origens.push({itemId:item.id,lojaId:item.loja_id,qtd:item.qtd});
