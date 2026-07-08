@@ -4073,16 +4073,25 @@ async function confirmarCompraComprador(idx){
   const fornecedor=el('cc-forn-'+idx).value.trim()||'Sem fornecedor';
   const pagamento=el('cc-pag-'+idx).value;
   showToast('Confirmando e distribuindo pra cada loja…');
+  const falhas=[];
   try{
     for(const origem of linha.origens){
-      await db.from('itens_pedido').update({status:'comprado'}).eq('id',origem.itemId);
-      await db.from('compras').insert({
+      const loja=lojas.find(x=>x.id===origem.lojaId);
+      const nomeLoja=loja?loja.nome:'Loja '+origem.lojaId;
+      const {error:updError}=await db.from('itens_pedido').update({status:'comprado'}).eq('id',origem.itemId);
+      if(updError){falhas.push(nomeLoja+': '+updError.message);continue;}
+      const {error:insError}=await db.from('compras').insert({
         loja_id:origem.lojaId,item_pedido_id:origem.itemId,data:currentDate,
         produto:linha.produto,categoria:linha.categoria,qtd:origem.qtd,
         valor_unit:valorUnit,fornecedor,pagamento
       });
+      if(insError)falhas.push(nomeLoja+': '+insError.message);
     }
-    showToast('Compra confirmada e distribuída pra '+linha.origens.length+' loja(s)!');
+    if(falhas.length){
+      showToast('Atenção: falhou pra '+falhas.length+' loja(s). '+falhas.join(' | '));
+    } else {
+      showToast('Compra confirmada e distribuída pra '+linha.origens.length+' loja(s)!');
+    }
     renderComprasComprador();
   }catch(e){showToast('Erro: '+e.message);}
 }
