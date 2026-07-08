@@ -1425,7 +1425,13 @@ async function doRegister(){
   if(perfilError){ mostrarErroRegistro('Erro ao criar perfil: '+perfilError.message); return; }
 
   if(roleFinal==='comprador'){
-    try{await db.from('loja_membros').insert({user_id:userId,loja_id:lojaIdFinal,role:'comprador'});}catch(e){}
+    try{
+      const {error:membroError}=await db.from('loja_membros').insert({user_id:userId,loja_id:lojaIdFinal,role:'comprador'});
+      if(membroError){mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você como comprador dessa loja: '+membroError.message+'. Fale com quem te convidou.');return;}
+    }catch(e){
+      mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você como comprador dessa loja. Fale com quem te convidou.');
+      return;
+    }
   }
 
   showToast(temConvite?'Conta criada! Bem-vindo(a) à equipe 🎉':'Conta criada com sucesso!');
@@ -2059,21 +2065,23 @@ function renderPedido(){
     prodSel.innerHTML=PRODUTOS[p.categoria].map(pr=>`<option value="${pr}"${pr===p.produto?' selected':''}>${pr}</option>`).join('');
   });
 }
-function toggleEditPedido(id){el('ep-'+id).classList.toggle('open');}
-function onEditCatChange(id){
-  const cat=el('ep-cat-'+id).value;
+function toggleEditPedido(id,tabela){el((tabela?'ept-':'ep-')+id).classList.toggle('open');}
+function onEditCatChange(id,tabela){
+  const pre=tabela?'ept-':'ep-';
+  const cat=el(pre+'cat-'+id).value;
   const item=itensPedido.find(i=>i.id===id);
-  const prodSel=el('ep-prod-'+id);
+  const prodSel=el(pre+'prod-'+id);
   if(!prodSel)return;
   prodSel.innerHTML=PRODUTOS[cat].map(pr=>`<option value="${pr}"${(item&&pr===item.produto)?' selected':''}>${pr}</option>`).join('');
 }
-function saveEditPedido(id){
+function saveEditPedido(id,tabela){
+  const pre=tabela?'ept-':'ep-';
   const item=itensPedido.find(i=>i.id===id);if(!item)return;
-  item.categoria=el('ep-cat-'+id).value;
-  item.produto=el('ep-prod-'+id).value;
-  item.qtd=Math.round(parseFloat(el('ep-qtd-'+id).value)||item.qtd);
-  const tipoEl=el('ep-tipo-'+id);if(tipoEl)item.tipo=tipoEl.value;
-  const unidEl=el('ep-unid-'+id);if(unidEl)item.unidPorCaixa=(item.tipo==='caixa'?(parseInt(unidEl.value)||null):null);
+  item.categoria=el(pre+'cat-'+id).value;
+  item.produto=el(pre+'prod-'+id).value;
+  item.qtd=Math.round(parseFloat(el(pre+'qtd-'+id).value)||item.qtd);
+  const tipoEl=el(pre+'tipo-'+id);if(tipoEl)item.tipo=tipoEl.value;
+  const unidEl=el(pre+'unid-'+id);if(unidEl)item.unidPorCaixa=(item.tipo==='caixa'?(parseInt(unidEl.value)||null):null);
   syncPedidoUpdate(item);
   renderPedido();renderPendentes();renderPedidoTabela();showToast('Item atualizado!');
 }
@@ -2148,31 +2156,32 @@ function renderPedidoTabela(){
           <button class="btn-icon" title="Remover" onclick="removeItem(${p.id})"><i class="ti ti-x"></i></button>`:''}
         </div>
       </div>
-      ${p.status==='pendente'?`<div class="inline-form" id="ep-${p.id}">
-        <select id="ep-cat-${p.id}" style="flex:1;min-width:100px;" onchange="onEditCatChange(${p.id})">
+      ${p.status==='pendente'?`<div class="inline-form" id="ept-${p.id}">
+        <select id="ept-cat-${p.id}" style="flex:1;min-width:100px;" onchange="onEditCatChange(${p.id},true)">
           <option value="fruta"${p.categoria==='fruta'?' selected':''}>Fruta</option>
           <option value="legume"${p.categoria==='legume'?' selected':''}>Legume</option>
           <option value="verdura"${p.categoria==='verdura'?' selected':''}>Verdura</option>
         </select>
-        <select id="ep-prod-${p.id}" style="flex:2;min-width:140px;"></select>
-        <input type="number" step="1" min="0" value="${p.qtd}" id="ep-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;" oninput="this.value=Math.round(+this.value)||''"/>
-        <select id="ep-tipo-${p.id}" style="flex:1;min-width:110px;" onchange="onEditTipoChange(${p.id})">
+        <select id="ept-prod-${p.id}" style="flex:2;min-width:140px;"></select>
+        <input type="number" step="1" min="0" value="${p.qtd}" id="ept-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;" oninput="this.value=Math.round(+this.value)||''"/>
+        <select id="ept-tipo-${p.id}" style="flex:1;min-width:110px;" onchange="onEditTipoChange(${p.id},true)">
           <option value="caixa"${(p.tipo||'caixa')==='caixa'?' selected':''}>📦 Caixa</option>
           <option value="unidade"${p.tipo==='unidade'?' selected':''}>🔢 Unidade</option>
         </select>
-        <input type="number" step="1" min="1" value="${p.unidPorCaixa||''}" id="ep-unid-${p.id}" placeholder="un/cx" style="flex:1;min-width:80px;${p.tipo==='unidade'?'opacity:.3;pointer-events:none':''}"/>
-        <button class="btn-primary" onclick="saveEditPedido(${p.id})" style="width:100%;margin-top:2px;"><i class="ti ti-device-floppy"></i> Salvar</button>
+        <input type="number" step="1" min="1" value="${p.unidPorCaixa||''}" id="ept-unid-${p.id}" placeholder="un/cx" style="flex:1;min-width:80px;${p.tipo==='unidade'?'opacity:.3;pointer-events:none':''}"/>
+        <button class="btn-primary" onclick="saveEditPedido(${p.id},true)" style="width:100%;margin-top:2px;"><i class="ti ti-device-floppy"></i> Salvar</button>
       </div>`:''}
     </div>`).join(''):'';
   itens.filter(i=>i.status==='pendente').forEach(p=>{
-    const prodSel=el('ep-prod-'+p.id);
+    const prodSel=el('ept-prod-'+p.id);
     if(!prodSel)return;
     prodSel.innerHTML=PRODUTOS[p.categoria].map(pr=>`<option value="${pr}"${pr===p.produto?' selected':''}>${pr}</option>`).join('');
   });
 }
-function onEditTipoChange(id){
-  const tipo=el('ep-tipo-'+id).value;
-  const unidInp=el('ep-unid-'+id);
+function onEditTipoChange(id,tabela){
+  const pre=tabela?'ept-':'ep-';
+  const tipo=el(pre+'tipo-'+id).value;
+  const unidInp=el(pre+'unid-'+id);
   if(!unidInp)return;
   if(tipo==='unidade'){unidInp.style.opacity='.3';unidInp.style.pointerEvents='none';unidInp.value='';}
   else{unidInp.style.opacity='1';unidInp.style.pointerEvents='';}
@@ -2473,7 +2482,8 @@ async function salvarFornecedor(){
         loja_id:currentLojaId,nome,categoria:cat,padrao:false
       }).select().single();
       if(!error&&data){const f=fornCustom[cat].find(x=>x===novo);if(f)f.id=data.id;}
-    }catch(e){}
+      else if(error)showToast('Erro ao salvar fornecedor no banco: '+error.message);
+    }catch(e){showToast('Erro ao salvar fornecedor no banco.');}
   }
   el('fornNomeInput').value='';renderFornecedoresCadastro();populateFornecedores('catAvulso','fornAvulsoList');
 }
@@ -2601,7 +2611,8 @@ async function addDespesa(){
       valor:nova.valor,forma:nova.forma
     }).select().single();
     if(!error&&data){const d=despesas.find(x=>x===nova);if(d)d.id=data.id;}
-  }catch(e){}
+    else if(error)showToast('Erro ao salvar despesa no banco: '+error.message);
+  }catch(e){showToast('Erro ao salvar despesa no banco.');}
 }
 let despFiltroAtual='hoje';
 function despSetFiltro(f){
@@ -4417,8 +4428,11 @@ async function aplicarMargemTodos(){
   showToast('Margem de '+(tipo==='pct'?val+'%':'R$ '+val.toFixed(2))+' aplicada a '+prods.length+' produto(s)!');
   try{
     const rows=prods.map(p=>({loja_id:currentLojaId,produto:p,tipo,valor:val,updated_at:new Date().toISOString()}));
-    if(rows.length)await db.from('margens_custom').upsert(rows,{onConflict:'loja_id,produto'});
-  }catch(e){}
+    if(rows.length){
+      const {error}=await db.from('margens_custom').upsert(rows,{onConflict:'loja_id,produto'});
+      if(error)showToast('Erro ao salvar margens no banco: '+error.message);
+    }
+  }catch(e){showToast('Erro ao salvar margens no banco.');}
 }
 async function limparMargensCustom(){
   margemCustom={};renderPrecosMedia();showToast('Margens personalizadas resetadas');
@@ -4611,10 +4625,11 @@ async function precosSalvar(pid){
     renderPrecosMedia();return;
   }
   try{
-    await db.from('margens_custom').upsert({
+    const {error:_e3}=await db.from('margens_custom').upsert({
       loja_id:currentLojaId,produto:prod,tipo,valor,updated_at:new Date().toISOString()
     },{onConflict:'loja_id,produto'});
-  }catch(e){}
+    if(_e3)showToast('Erro ao salvar margem no banco: '+_e3.message);
+  }catch(e){showToast('Erro ao salvar margem no banco.');}
   renderPrecosMedia();
 }
 
