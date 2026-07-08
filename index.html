@@ -2773,7 +2773,11 @@ async function excluirLoja(id){
 }
 async function addNovaLoja(){
   if(!confirm('Criar uma nova loja gera uma cobrança mensal própria pra ela (depois do trial de 3 dias). Quer continuar?'))return;
-  const nomeLoja=`Loja ${String(lojas.length+1).padStart(2,'0')}`;
+  const numeroDaLoja=lojas.length+1;
+  if(numeroDaLoja%5===0){
+    if(!confirm('Essa vai ser a sua '+numeroDaLoja+'ª loja. Só confirmando: é isso mesmo que você quer criar?'))return;
+  }
+  const nomeLoja=`Loja ${String(numeroDaLoja).padStart(2,'0')}`;
   showToast('Criando loja…');
   try{
     const {data:novaLoja,error}=await db.from('lojas').insert({nome:nomeLoja}).select().single();
