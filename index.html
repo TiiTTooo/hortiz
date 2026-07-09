@@ -1703,8 +1703,7 @@ async function carregarMinhasLojas(){
 
 async function doLogout(){
   await db.auth.signOut();
-  currentUser=null;
-  el('loginScreen').style.display='flex';el('appShell').style.display='none';
+  window.location.reload();
 }
 
 async function tryAutoLogin(){
