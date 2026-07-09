@@ -986,7 +986,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             </select>
             <input type="text" id="gerProdBusca" placeholder="Buscar produto…" oninput="renderGerenciarProdutos()" style="flex:2;min-width:140px;"/>
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.625rem;gap:8px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:220px;">
+              <input type="file" id="gerProdutosCsvInput" accept=".csv" style="flex:1;font-size:12px;min-width:0;"/>
+              <button class="btn-ghost btn-sm" onclick="importarCsvGerenciar('produtos')"><i class="ti ti-upload"></i> Importar CSV</button>
+            </div>
             <button class="btn-ghost btn-sm" onclick="exportarProdutosCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
           </div>
           <div id="listaGerenciarProdutos"></div>
@@ -1005,7 +1009,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-ghost" onclick="cancelEditForn()" id="btnCancelForn" style="display:none;flex:none;">Cancelar</button>
             </div>
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.625rem;gap:8px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:220px;">
+              <input type="file" id="gerFornecedoresCsvInput" accept=".csv" style="flex:1;font-size:12px;min-width:0;"/>
+              <button class="btn-ghost btn-sm" onclick="importarCsvGerenciar('fornecedores')"><i class="ti ti-upload"></i> Importar CSV</button>
+            </div>
             <button class="btn-ghost btn-sm" onclick="exportarFornecedoresCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
           </div>
           <div id="listaFornCadastro"></div>
@@ -1023,7 +1031,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-ghost" onclick="cancelEditTipoDespesa()" id="btnCancelTipoDespesa" style="display:none;flex:none;">Cancelar</button>
             </div>
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.625rem;gap:8px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:220px;">
+              <input type="file" id="gerDespesasCsvInput" accept=".csv" style="flex:1;font-size:12px;min-width:0;"/>
+              <button class="btn-ghost btn-sm" onclick="importarCsvGerenciar('despesas')"><i class="ti ti-upload"></i> Importar CSV</button>
+            </div>
             <button class="btn-ghost btn-sm" onclick="exportarDespesasTiposCsv()"><i class="ti ti-file-spreadsheet"></i> Exportar tabela (CSV)</button>
           </div>
           <div id="listaTiposDespesa"></div>
@@ -4044,6 +4056,36 @@ async function importarSetupCsv(){
     showToast('Importado!');
     setTimeout(avancarSetup,1600);
   }catch(e){statusEl.textContent='Erro: '+e.message;}
+}
+
+async function importarCsvGerenciar(tipo){
+  const inputId=tipo==='produtos'?'gerProdutosCsvInput':tipo==='fornecedores'?'gerFornecedoresCsvInput':'gerDespesasCsvInput';
+  const fileInput=document.getElementById(inputId);
+  if(!fileInput.files||!fileInput.files[0]){showToast('Escolha um arquivo CSV primeiro');return;}
+  showToast('Lendo arquivo…');
+  try{
+    const texto=await fileInput.files[0].text();
+    const {resultado,erros}=parseCsvGenerico(texto,tipo);
+    if(!resultado.length){showToast('Nenhum item válido encontrado no arquivo. Confira o formato do CSV.');return;}
+    showToast(`Importando ${resultado.length} item(ns)…`);
+    let error;
+    if(tipo==='produtos'){
+      const linhas=resultado.map(r=>({loja_id:currentLojaId,categoria:r.categoria,nome:r.nome}));
+      ({error}=await db.from('produtos').upsert(linhas,{onConflict:'loja_id,categoria,nome'}));
+    } else if(tipo==='fornecedores'){
+      const linhas=resultado.map(r=>({loja_id:currentLojaId,categoria:r.categoria,nome:r.nome,padrao:false}));
+      ({error}=await db.from('fornecedores').insert(linhas));
+    } else if(tipo==='despesas'){
+      const linhas=resultado.map(r=>({loja_id:currentLojaId,nome:r.nome,ativo:true}));
+      ({error}=await db.from('despesas_tipos').upsert(linhas,{onConflict:'loja_id,nome'}));
+    }
+    if(error){showToast('Erro ao importar: '+error.message);return;}
+    await recarregarListasLoja();
+    fileInput.value='';
+    let msg=`✅ ${resultado.length} item(ns) importado(s)!`;
+    if(erros.length)msg+=` (${erros.length} linha(s) ignorada(s))`;
+    showToast(msg);
+  }catch(e){showToast('Erro ao importar: '+e.message);}
 }
 
 async function carregarProdutos(){
