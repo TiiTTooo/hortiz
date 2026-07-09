@@ -33,7 +33,6 @@
   --blue:#5caaff;--blue-bg:#0f1e2d;
   --purple:#b07dff;--purple-bg:#1e1430;
   --gray:#6b7e6d;--gray-bg:#1c221d;
-  --cat-fruta:#ff7043;--cat-legume:#66bb6a;--cat-verdura:#26c6da;
   --radius:12px;--radius-sm:7px;
 }
 [data-theme="light"]{--red-bg:#fdecec;--amber-bg:#fdf4e0;--blue-bg:#e4f0fd;--purple-bg:#f0e8fd;--gray-bg:#eef1f4;--accent-bg:#e0f7ea;--accent-txt:#05421f;--accent-d:#1a9850;}
@@ -184,9 +183,6 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
 /* ── ITEM ROWS ── */
 .item-row{border-left:3px solid var(--border2);border-radius:var(--radius-sm);padding:.625rem .875rem;margin-bottom:.5rem;background:var(--bg2);border-top:1px solid var(--border);border-right:1px solid var(--border);border-bottom:1px solid var(--border);transition:background .25s;}
-.item-row.cat-fruta{border-left-color:var(--cat-fruta);}
-.item-row.cat-legume{border-left-color:var(--cat-legume);}
-.item-row.cat-verdura{border-left-color:var(--cat-verdura);}
 .item-title{font-size:14px;font-weight:600;}
 .item-meta{font-size:13px;color:var(--text2);margin-top:2px;}
 .item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
@@ -201,14 +197,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 .badge-pg{background:var(--blue-bg);color:var(--blue);}
 .badge-pgt{background:var(--purple-bg);color:var(--purple);}
 .badge-fiado{background:var(--red-bg);color:var(--red);}
-.badge-fruta{background:#2d1a0e;color:var(--cat-fruta);}
-.badge-legume{background:#0e2010;color:var(--cat-legume);}
-.badge-verdura{background:#0a1e22;color:var(--cat-verdura);}
 .badge-owner{background:var(--purple-bg);color:var(--purple);}
 .badge-manager{background:var(--blue-bg);color:var(--blue);}
-[data-theme="light"] .badge-fruta{background:#ffe8e0;}
-[data-theme="light"] .badge-legume{background:#e0f5e0;}
-[data-theme="light"] .badge-verdura{background:#daf8fc;}
 
 /* ── INLINE FORM ── */
 .inline-form{display:none;flex-wrap:wrap;gap:.5rem;margin-top:.625rem;padding-top:.625rem;border-top:1px solid var(--border);}
@@ -980,13 +970,13 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">
-            <select id="gerProdCatFilter" onchange="renderGerenciarProdutos()" style="flex:1;min-width:110px;">
+            <select id="gerProdCatFilter" onchange="renderGerenciarProdutosLista()" style="flex:1;min-width:110px;">
               <option value="">Todas categorias</option>
               <option value="fruta">🍊 Frutas</option>
               <option value="legume">🥕 Legumes</option>
               <option value="verdura">🥬 Verduras</option>
             </select>
-            <input type="text" id="gerProdBusca" placeholder="Buscar produto…" oninput="renderGerenciarProdutos()" style="flex:2;min-width:140px;"/>
+            <input type="text" id="gerProdBusca" placeholder="Buscar produto…" oninput="renderGerenciarProdutosLista()" style="flex:2;min-width:140px;"/>
           </div>
           <div id="btnExcluirCatWrap" style="display:none;margin-bottom:.625rem;">
             <button class="btn-danger-soft btn-sm" onclick="excluirTodosProdutosCategoria()"><i class="ti ti-trash"></i> Excluir todos os produtos desta categoria</button>
@@ -1664,7 +1654,7 @@ function toggleSidebar(){
   el('sidebar').classList.toggle('open',sidebarOpen);
   const bd=el('sidebarBackdrop');if(bd)bd.classList.toggle('open',sidebarOpen);
   document.body.classList.toggle('sidebar-locked',sidebarOpen);
-  localStorage.setItem('ceasa_sidebar_open',sidebarOpen?'1':'0');
+  localStorage.setItem(chaveLS('ceasa_sidebar_open'),sidebarOpen?'1':'0');
 }
 
 /* ── STORE MODAL (centralizado) ── */
@@ -1948,6 +1938,9 @@ function renderPrecoHistorico(){
 
 /* ── ALL TABS ── */
 const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
+function chaveLS(base){
+  return (currentUser&&currentUser.id)?base+'_'+currentUser.id:base;
+}
 function abaRestauravelParaUsuario(tab){
   if(!currentUser)return tab==='home';
   if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
@@ -1969,7 +1962,7 @@ function switchTab(tab){
     showToast('Seu acesso é só pra aba de Compras.');
     return;
   }
-  localStorage.setItem('ceasa_last_tab',tab);
+  localStorage.setItem(chaveLS('ceasa_last_tab'),tab);
   if(sidebarOpen&&window.matchMedia('(max-width:768px)').matches)toggleSidebar();
   ALL_TABS.forEach(t=>{const s=el('tab-'+t);if(s)s.style.display=t===tab?'':'none';});
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -3073,7 +3066,7 @@ async function removerGerente(perfilId,nome){
 let gerenciarViewAtual='produtos';
 function switchGerenciarView(view){
   gerenciarViewAtual=view;
-  localStorage.setItem('ceasa_gerenciar_view',view);
+  localStorage.setItem(chaveLS('ceasa_gerenciar_view'),view);
   el('ger-produtos').style.display=view==='produtos'?'':'none';
   el('ger-fornecedores').style.display=view==='fornecedores'?'':'none';
   el('ger-despesas').style.display=view==='despesas'?'':'none';
@@ -3258,8 +3251,14 @@ async function moverCategoria(id,direcao){
   const a=ordenadas[idx],b=ordenadas[outroIdx];
   try{
     const {error:e1}=await db.from('categorias').update({ordem:b.ordem}).eq('id',a.id);
+    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
     const {error:e2}=await db.from('categorias').update({ordem:a.ordem}).eq('id',b.id);
-    if(e1||e2){showToast('Erro ao reordenar: '+((e1||e2).message));return;}
+    if(e2){
+      // desfaz a primeira mudança pra não deixar as duas categorias com o mesmo número de ordem
+      await db.from('categorias').update({ordem:a.ordem}).eq('id',a.id);
+      showToast('Erro ao reordenar: '+e2.message);
+      return;
+    }
     await recarregarListasLoja();
   }catch(e){showToast('Erro ao reordenar: '+e.message);}
 }
@@ -4017,7 +4016,7 @@ async function recarregarListasLoja(){
     const {data}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
     if(data&&data.length)DESPESAS_TIPO=data.map(t=>t.nome);
   }catch(e){}
-  if(gerenciarViewAtual==='produtos')renderGerenciarProdutos();
+  if(gerenciarViewAtual==='produtos')renderGerenciarProdutos(true);
   if(gerenciarViewAtual==='fornecedores')renderFornecedoresCadastro();
   if(gerenciarViewAtual==='despesas')renderTiposDespesa();
   if(gerenciarViewAtual==='categorias')renderCategoriasCadastro();
@@ -4480,36 +4479,45 @@ async function renderComprasCompradorFeitas(){
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
 }
 
-async function renderGerenciarProdutos(){
+let produtosGerenciarCache=null;
+async function renderGerenciarProdutos(forcarReload){
   const cont=el('listaGerenciarProdutos');if(!cont)return;
-  cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
-  try{
-    const {data,error}=await db.from('produtos').select('*').eq('loja_id',currentLojaId).order('categoria').order('nome');
-    if(error){cont.innerHTML='<div class="empty">Erro ao carregar produtos.</div>';return;}
-    const catFiltro=el('gerProdCatFilter')?el('gerProdCatFilter').value:'';
-    const busca=(el('gerProdBusca')?el('gerProdBusca').value:'').toLowerCase();
-    const filtrados=(data||[]).filter(p=>(!catFiltro||p.categoria===catFiltro)&&(!busca||p.nome.toLowerCase().includes(busca)));
-    const wrapExcluirCat=el('btnExcluirCatWrap');
-    if(wrapExcluirCat){
-      if(catFiltro){
-        const qtdNaCategoria=(data||[]).filter(p=>p.categoria===catFiltro).length;
-        wrapExcluirCat.style.display=qtdNaCategoria?'':'none';
-        wrapExcluirCat.innerHTML=`<button class="btn-danger-soft btn-sm" onclick="excluirTodosProdutosCategoria()"><i class="ti ti-trash"></i> Excluir os ${qtdNaCategoria} produtos de ${labelCat(catFiltro)}</button>`;
-      } else {
-        wrapExcluirCat.style.display='none';
-      }
+  if(produtosGerenciarCache===null||forcarReload){
+    cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
+    try{
+      const {data,error}=await db.from('produtos').select('*').eq('loja_id',currentLojaId).order('categoria').order('nome');
+      if(error){cont.innerHTML='<div class="empty">Erro ao carregar produtos.</div>';return;}
+      produtosGerenciarCache=data||[];
+    }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar produtos.</div>';return;}
+  }
+  renderGerenciarProdutosLista();
+}
+function renderGerenciarProdutosLista(){
+  const cont=el('listaGerenciarProdutos');if(!cont)return;
+  const data=produtosGerenciarCache||[];
+  const catFiltro=el('gerProdCatFilter')?el('gerProdCatFilter').value:'';
+  const busca=(el('gerProdBusca')?el('gerProdBusca').value:'').toLowerCase();
+  const filtrados=data.filter(p=>(!catFiltro||p.categoria===catFiltro)&&(!busca||p.nome.toLowerCase().includes(busca)));
+  const wrapExcluirCat=el('btnExcluirCatWrap');
+  if(wrapExcluirCat){
+    if(catFiltro){
+      const qtdNaCategoria=data.filter(p=>p.categoria===catFiltro).length;
+      wrapExcluirCat.style.display=qtdNaCategoria?'':'none';
+      wrapExcluirCat.innerHTML=`<button class="btn-danger-soft btn-sm" onclick="excluirTodosProdutosCategoria()"><i class="ti ti-trash"></i> Excluir os ${qtdNaCategoria} produtos de ${labelCat(catFiltro)}</button>`;
+    } else {
+      wrapExcluirCat.style.display='none';
     }
-    if(!filtrados.length){cont.innerHTML='<div class="empty"><i class="ti ti-apple"></i>Nenhum produto encontrado. Adicione um acima, ou ajuste os filtros.</div>';return;}
-    cont.innerHTML=filtrados.map(p=>`<div class="data-card"${p.ativo?'':' style="opacity:.55;"'}>
-      <div style="flex:1;min-width:0;">
-        <p style="font-size:14px;font-weight:600;">${emojiCat(p.categoria)} ${p.nome}</p>
-        <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'}</p>
-      </div>
-      <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}','${p.categoria}')" title="Editar"><i class="ti ti-edit"></i></button>
-      <button class="btn-ghost btn-sm" onclick="alternarProdutoAtivo(${p.id},${!p.ativo})" title="${p.ativo?'Desativar':'Reativar'}"><i class="ti ti-${p.ativo?'eye-off':'eye'}"></i></button>
-      <button class="btn-danger-soft btn-sm" onclick="excluirProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
-    </div>`).join('');
-  }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar produtos.</div>';}
+  }
+  if(!filtrados.length){cont.innerHTML='<div class="empty"><i class="ti ti-apple"></i>Nenhum produto encontrado. Adicione um acima, ou ajuste os filtros.</div>';return;}
+  cont.innerHTML=filtrados.map(p=>`<div class="data-card"${p.ativo?'':' style="opacity:.55;"'}>
+    <div style="flex:1;min-width:0;">
+      <p style="font-size:14px;font-weight:600;">${emojiCat(p.categoria)} ${p.nome}</p>
+      <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'}</p>
+    </div>
+    <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}','${p.categoria}')" title="Editar"><i class="ti ti-edit"></i></button>
+    <button class="btn-ghost btn-sm" onclick="alternarProdutoAtivo(${p.id},${!p.ativo})" title="${p.ativo?'Desativar':'Reativar'}"><i class="ti ti-${p.ativo?'eye-off':'eye'}"></i></button>
+    <button class="btn-danger-soft btn-sm" onclick="excluirProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
+  </div>`).join('');
 }
 async function excluirTodosProdutosCategoria(){
   const catFiltro=el('gerProdCatFilter')?el('gerProdCatFilter').value:'';
@@ -4523,7 +4531,7 @@ async function excluirTodosProdutosCategoria(){
     const {error}=await db.from('produtos').delete().eq('loja_id',currentLojaId).eq('categoria',catFiltro);
     if(error){showToast('Erro ao excluir: '+error.message);return;}
     await carregarProdutos();
-    renderGerenciarProdutos();
+    renderGerenciarProdutos(true);
     showToast(`${qtd} produto(s) excluído(s) da categoria ${labelCat(catFiltro)}.`);
   }catch(e){showToast('Erro ao excluir: '+e.message);}
 }
@@ -4558,7 +4566,7 @@ async function adicionarProduto(){
       showToast(nome+' adicionado!');
     }
     await carregarProdutos();
-    renderGerenciarProdutos();
+    renderGerenciarProdutos(true);
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function alternarProdutoAtivo(id,novoStatus){
@@ -4566,7 +4574,7 @@ async function alternarProdutoAtivo(id,novoStatus){
     const {error}=await db.from('produtos').update({ativo:novoStatus}).eq('id',id);
     if(error){showToast('Erro: '+error.message);return;}
     await carregarProdutos();
-    renderGerenciarProdutos();
+    renderGerenciarProdutos(true);
     showToast(novoStatus?'Produto reativado':'Produto desativado');
   }catch(e){showToast('Erro: '+e.message);}
 }
@@ -4576,13 +4584,14 @@ async function excluirProduto(id,nome){
     const {error}=await db.from('produtos').delete().eq('id',id);
     if(error){showToast('Erro: '+error.message);return;}
     await carregarProdutos();
-    renderGerenciarProdutos();
+    renderGerenciarProdutos(true);
     showToast('Produto excluído');
   }catch(e){showToast('Erro: '+e.message);}
 }
 
 async function carregarDadosDaLoja(){
   if(!currentLojaId)return;
+  produtosGerenciarCache=null;
   await carregarCategorias();
   await carregarProdutos();
   try{
@@ -4755,12 +4764,12 @@ function init(){
   populateProdutos('catPlan','prodPlan');populateProdutos('catAvulso','prodAvulso');populateFornecedores('catAvulso','fornAvulsoList');
   refreshHeadings();renderHistorico();renderAll();switchCatTabela(listaCatComFallback()[0].chave);
   populateInvLoja();renderUsuarios();renderLojas();initColorSwatches();renderFornecedoresCadastro();
-  const viewSalva=localStorage.getItem('ceasa_gerenciar_view');
+  const viewSalva=localStorage.getItem(chaveLS('ceasa_gerenciar_view'));
   if(viewSalva&&['produtos','fornecedores','despesas','categorias'].includes(viewSalva))gerenciarViewAtual=viewSalva;
-  let abaSalva=localStorage.getItem('ceasa_last_tab')||'home';
+  let abaSalva=localStorage.getItem(chaveLS('ceasa_last_tab'))||'home';
   if(!ALL_TABS.includes(abaSalva)||!abaRestauravelParaUsuario(abaSalva))abaSalva='home';
   switchTab(abaSalva);
-  if(localStorage.getItem('ceasa_sidebar_open')==='1'&&!sidebarOpen&&!window.matchMedia('(max-width:768px)').matches){
+  if(localStorage.getItem(chaveLS('ceasa_sidebar_open'))==='1'&&!sidebarOpen&&!window.matchMedia('(max-width:768px)').matches){
     toggleSidebar();
   }
   renderAssinatura();
