@@ -178,6 +178,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 .seg-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border2);}
 .cat-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:7px 14px;font-size:13px;border-radius:var(--radius-sm);flex:1;justify-content:center;}
 .cat-btn.active{background:var(--accent-bg);border-color:var(--accent-d);color:var(--accent);}
+.emoji-pick{border:2px solid transparent;}
+.emoji-pick.selecionado{background:var(--accent-bg);border-color:var(--accent-d);}
 .cat-btn-bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:.625rem 0 .5rem;margin:-0.625rem 0 .25rem;transition:background .25s;}
 
 /* ── ITEM ROWS ── */
@@ -1055,27 +1057,27 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <input type="text" id="novaCategoriaEmoji" placeholder="Emoji (ex: 🧂)" maxlength="4" style="flex:0 0 90px;text-align:center;font-size:18px;"/>
               <input type="text" id="novaCategoriaNome" placeholder="Nome da categoria (ex: Temperos)"/>
             </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:.75rem;">
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🍊')" style="font-size:18px;padding:4px 10px;">🍊</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥕')" style="font-size:18px;padding:4px 10px;">🥕</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥬')" style="font-size:18px;padding:4px 10px;">🥬</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🧂')" style="font-size:18px;padding:4px 10px;">🧂</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥔')" style="font-size:18px;padding:4px 10px;">🥔</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥚')" style="font-size:18px;padding:4px 10px;">🥚</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🧀')" style="font-size:18px;padding:4px 10px;">🧀</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥩')" style="font-size:18px;padding:4px 10px;">🥩</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🐟')" style="font-size:18px;padding:4px 10px;">🐟</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🍞')" style="font-size:18px;padding:4px 10px;">🍞</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🌾')" style="font-size:18px;padding:4px 10px;">🌾</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥛')" style="font-size:18px;padding:4px 10px;">🥛</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🧊')" style="font-size:18px;padding:4px 10px;">🧊</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🍫')" style="font-size:18px;padding:4px 10px;">🍫</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🥫')" style="font-size:18px;padding:4px 10px;">🥫</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🌶️')" style="font-size:18px;padding:4px 10px;">🌶️</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🧴')" style="font-size:18px;padding:4px 10px;">🧴</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🧻')" style="font-size:18px;padding:4px 10px;">🧻</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('🛒')" style="font-size:18px;padding:4px 10px;">🛒</button>
-              <button type="button" class="btn-ghost btn-sm" onclick="selecionarEmojiCategoria('📦')" style="font-size:18px;padding:4px 10px;">📦</button>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:.75rem;" id="emojiPickerCategoria">
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🍊" onclick="selecionarEmojiCategoria('🍊')" style="font-size:18px;padding:4px 10px;">🍊</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥕" onclick="selecionarEmojiCategoria('🥕')" style="font-size:18px;padding:4px 10px;">🥕</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥬" onclick="selecionarEmojiCategoria('🥬')" style="font-size:18px;padding:4px 10px;">🥬</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🧂" onclick="selecionarEmojiCategoria('🧂')" style="font-size:18px;padding:4px 10px;">🧂</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥔" onclick="selecionarEmojiCategoria('🥔')" style="font-size:18px;padding:4px 10px;">🥔</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥚" onclick="selecionarEmojiCategoria('🥚')" style="font-size:18px;padding:4px 10px;">🥚</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🧀" onclick="selecionarEmojiCategoria('🧀')" style="font-size:18px;padding:4px 10px;">🧀</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥩" onclick="selecionarEmojiCategoria('🥩')" style="font-size:18px;padding:4px 10px;">🥩</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🐟" onclick="selecionarEmojiCategoria('🐟')" style="font-size:18px;padding:4px 10px;">🐟</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🍞" onclick="selecionarEmojiCategoria('🍞')" style="font-size:18px;padding:4px 10px;">🍞</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🌾" onclick="selecionarEmojiCategoria('🌾')" style="font-size:18px;padding:4px 10px;">🌾</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥛" onclick="selecionarEmojiCategoria('🥛')" style="font-size:18px;padding:4px 10px;">🥛</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🧊" onclick="selecionarEmojiCategoria('🧊')" style="font-size:18px;padding:4px 10px;">🧊</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🍫" onclick="selecionarEmojiCategoria('🍫')" style="font-size:18px;padding:4px 10px;">🍫</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🥫" onclick="selecionarEmojiCategoria('🥫')" style="font-size:18px;padding:4px 10px;">🥫</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🌶️" onclick="selecionarEmojiCategoria('🌶️')" style="font-size:18px;padding:4px 10px;">🌶️</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🧴" onclick="selecionarEmojiCategoria('🧴')" style="font-size:18px;padding:4px 10px;">🧴</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🧻" onclick="selecionarEmojiCategoria('🧻')" style="font-size:18px;padding:4px 10px;">🧻</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="🛒" onclick="selecionarEmojiCategoria('🛒')" style="font-size:18px;padding:4px 10px;">🛒</button>
+              <button type="button" class="emoji-pick btn-ghost btn-sm" data-emoji="📦" onclick="selecionarEmojiCategoria('📦')" style="font-size:18px;padding:4px 10px;">📦</button>
             </div>
             <div style="display:flex;gap:.5rem;">
               <button class="btn-primary" id="btnSalvarCategoria" onclick="adicionarCategoria()" style="flex:1;"><i class="ti ti-plus"></i> Adicionar</button>
@@ -1945,6 +1947,14 @@ function renderPrecoHistorico(){
 
 /* ── ALL TABS ── */
 const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
+function abaRestauravelParaUsuario(tab){
+  if(!currentUser)return tab==='home';
+  if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
+  if(currentUser.role==='comprador')return tab==='home'||tab==='compras';
+  if(tab==='master')return !!currentUser.isAdmin;
+  if(currentUser.role==='manager')return !['usuarios','assinatura','loja'].includes(tab);
+  return true;
+}
 function switchTab(tab){
   if(acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos')&&(tab==='pedidos'||tab==='compras')){
     showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
@@ -1958,6 +1968,7 @@ function switchTab(tab){
     showToast('Seu acesso é só pra aba de Compras.');
     return;
   }
+  localStorage.setItem('ceasa_last_tab',tab);
   if(sidebarOpen&&window.matchMedia('(max-width:768px)').matches)toggleSidebar();
   ALL_TABS.forEach(t=>{const s=el('tab-'+t);if(s)s.style.display=t===tab?'':'none';});
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -3061,6 +3072,7 @@ async function removerGerente(perfilId,nome){
 let gerenciarViewAtual='produtos';
 function switchGerenciarView(view){
   gerenciarViewAtual=view;
+  localStorage.setItem('ceasa_gerenciar_view',view);
   el('ger-produtos').style.display=view==='produtos'?'':'none';
   el('ger-fornecedores').style.display=view==='fornecedores'?'':'none';
   el('ger-despesas').style.display=view==='despesas'?'':'none';
@@ -3168,6 +3180,7 @@ function renderCategoriasCadastro(){
 }
 function selecionarEmojiCategoria(emoji){
   el('novaCategoriaEmoji').value=emoji;
+  document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.toggle('selecionado',b.dataset.emoji===emoji));
 }
 async function adicionarCategoria(){
   const nome=el('novaCategoriaNome').value.trim();
@@ -3191,6 +3204,7 @@ async function adicionarCategoria(){
     const {error}=await db.from('categorias').insert({loja_id:currentLojaId,chave,nome,emoji,ordem,ativa:true});
     if(error){showToast('Erro ao criar categoria: '+error.message);return;}
     el('novaCategoriaNome').value='';el('novaCategoriaEmoji').value='';
+    document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.remove('selecionado'));
     showToast('Categoria "'+nome+'" criada!');
     await recarregarListasLoja();
   }catch(e){showToast('Erro ao criar categoria: '+e.message);}
@@ -3200,6 +3214,7 @@ function editarCategoria(id){
   editingCategoriaId=id;
   el('novaCategoriaNome').value=c.nome;
   el('novaCategoriaEmoji').value=c.emoji;
+  document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.toggle('selecionado',b.dataset.emoji===c.emoji));
   el('btnSalvarCategoria').innerHTML='<i class="ti ti-device-floppy"></i> Salvar alteração';
   el('btnCancelCategoria').style.display='';
   el('catFormTitle').textContent='Editar categoria';
@@ -3208,6 +3223,7 @@ function editarCategoria(id){
 function cancelEditCategoria(){
   editingCategoriaId=null;
   el('novaCategoriaNome').value='';el('novaCategoriaEmoji').value='';
+  document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.remove('selecionado'));
   el('btnSalvarCategoria').innerHTML='<i class="ti ti-plus"></i> Adicionar';
   el('btnCancelCategoria').style.display='none';
   el('catFormTitle').textContent='Adicionar categoria';
@@ -4730,7 +4746,11 @@ function init(){
   populateProdutos('catPlan','prodPlan');populateProdutos('catAvulso','prodAvulso');populateFornecedores('catAvulso','fornAvulsoList');
   refreshHeadings();renderHistorico();renderAll();switchCatTabela(listaCatComFallback()[0].chave);
   populateInvLoja();renderUsuarios();renderLojas();initColorSwatches();renderFornecedoresCadastro();
-  switchTab('home');
+  const viewSalva=localStorage.getItem('ceasa_gerenciar_view');
+  if(viewSalva&&['produtos','fornecedores','despesas','categorias'].includes(viewSalva))gerenciarViewAtual=viewSalva;
+  let abaSalva=localStorage.getItem('ceasa_last_tab')||'home';
+  if(!ALL_TABS.includes(abaSalva)||!abaRestauravelParaUsuario(abaSalva))abaSalva='home';
+  switchTab(abaSalva);
   renderAssinatura();
 }
 
