@@ -3178,9 +3178,17 @@ function renderCategoriasCadastro(){
     <button class="btn-ghost btn-sm" onclick="alternarCategoriaAtiva(${c.id},${!c.ativa})" title="${c.ativa?'Desativar':'Reativar'}"><i class="ti ti-${c.ativa?'eye-off':'eye'}"></i></button>
   </div>`).join('');
 }
-function selecionarEmojiCategoria(emoji){
+async function selecionarEmojiCategoria(emoji){
   el('novaCategoriaEmoji').value=emoji;
   document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.toggle('selecionado',b.dataset.emoji===emoji));
+  if(editingCategoriaId!==null){
+    try{
+      const {error}=await db.from('categorias').update({emoji}).eq('id',editingCategoriaId);
+      if(error){showToast('Erro ao salvar emoji: '+error.message);return;}
+      showToast('Emoji atualizado!');
+      await recarregarListasLoja();
+    }catch(e){showToast('Erro ao salvar emoji: '+e.message);}
+  }
 }
 async function adicionarCategoria(){
   const nome=el('novaCategoriaNome').value.trim();
