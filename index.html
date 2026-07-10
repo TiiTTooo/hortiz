@@ -70,6 +70,7 @@ header>*{min-width:0;}
 @media(max-width:400px){.logo-name{font-size:13px;}.header-user-info{font-size:9.5px;}}
 .header-date{font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;justify-self:center;white-space:nowrap;}
 @media(max-width:460px){.header-date{display:none;}}
+@media(max-width:420px){.logo-text-wrap{display:none;}}
 .loja-badge{background:var(--accent-bg);border:1px solid var(--accent-d);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;transition:opacity .15s;flex-shrink:0;max-width:40vw;overflow:hidden;}
 .loja-badge span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .loja-badge:hover{opacity:.85;}
@@ -345,7 +346,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <button class="icon-btn" onclick="toggleSidebar()" title="Menu lateral" style="flex-shrink:0;"><i class="ti ti-layout-sidebar"></i></button>
       <div class="logo">
         <div class="logo-icon" id="headerLogoIcon"><i class="ti ti-leaf"></i></div>
-        <div style="min-width:0;overflow:hidden;">
+        <div class="logo-text-wrap" style="min-width:0;overflow:hidden;">
           <span class="logo-name" id="headerLojaName">Hortiz</span>
           <div id="headerUserInfo" class="header-user-info"></div>
         </div>
