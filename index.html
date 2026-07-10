@@ -59,6 +59,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 /* ── HEADER ── */
 header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.25rem;height:68px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;position:sticky;top:0;z-index:100;transition:background .25s;}
+header>*{min-width:0;}
 .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;min-width:0;overflow:hidden;}
 .logo-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--accent-txt);font-size:18px;overflow:hidden;flex-shrink:0;}
 .logo-icon img{width:100%;height:100%;object-fit:cover;}
@@ -69,9 +70,10 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.2
 @media(max-width:400px){.logo-name{font-size:13px;}.header-user-info{font-size:9.5px;}}
 .header-date{font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;justify-self:center;white-space:nowrap;}
 @media(max-width:460px){.header-date{display:none;}}
-.loja-badge{background:var(--accent-bg);border:1px solid var(--accent-d);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;transition:opacity .15s;}
+.loja-badge{background:var(--accent-bg);border:1px solid var(--accent-d);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;transition:opacity .15s;flex-shrink:0;max-width:40vw;overflow:hidden;}
+.loja-badge span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .loja-badge:hover{opacity:.85;}
-.icon-btn{background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;display:flex;align-items:center;border-radius:var(--radius-sm);}
+.icon-btn{background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;display:flex;align-items:center;border-radius:var(--radius-sm);flex-shrink:0;}
 .icon-btn:hover{color:var(--text);background:var(--bg3);}
 
 /* ── SIDEBAR ── */
