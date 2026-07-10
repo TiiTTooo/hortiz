@@ -4010,11 +4010,29 @@ async function mensagemErroFuncao(error){
 async function gerarCobrancaLoja(lojaId){
   const loja=todasLojas.find(l=>l.id===lojaId);
   if(!loja){showToast('Loja não encontrada');return;}
-  const sub=loja.assinaturas&&loja.assinaturas[0];
-  const plano=sub?sub.plano:'mensal';
+  // Salva primeiro o que estiver preenchido na tela agora (valor/plano),
+  // pra nunca gerar uma cobrança com um valor desatualizado no banco.
+  const valEl=document.getElementById('masterVal_'+lojaId);
+  const planoEl=document.getElementById('masterPlano_'+lojaId);
+  let planoParaCobrar;
+  if(valEl&&planoEl){
+    const valorAtual=parseFloat(valEl.value);
+    planoParaCobrar=planoEl.value;
+    if(!isNaN(valorAtual)&&valorAtual>=0){
+      try{
+        await db.from('assinaturas').upsert({
+          loja_id:lojaId,valor_mensal:valorAtual,plano:planoParaCobrar,updated_at:new Date().toISOString()
+        },{onConflict:'loja_id'});
+      }catch(e){showToast('Aviso: não consegui salvar o valor antes de gerar a cobrança ('+e.message+'). Conferindo com o que já estava salvo…');}
+    }
+  }
+  if(!planoParaCobrar){
+    const sub=loja.assinaturas&&loja.assinaturas[0];
+    planoParaCobrar=sub?sub.plano:'mensal';
+  }
   showToast('Gerando cobrança no Asaas…');
   try{
-    const {data,error}=await db.functions.invoke('smart-service',{body:{loja_id:lojaId,plano}});
+    const {data,error}=await db.functions.invoke('smart-service',{body:{loja_id:lojaId,plano:planoParaCobrar}});
     if(error||!data||data.error){
       const msg=data&&data.error?data.error:await mensagemErroFuncao(error);
       showToast('Erro: '+msg);
