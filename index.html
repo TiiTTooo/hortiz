@@ -751,7 +751,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <button class="btn-ghost" onclick="cancelEditLoja()" id="btnCancelLoja" style="display:none;flex:none;">Cancelar</button>
           </div>
         </div>
-        <div class="sh"><i class="ti ti-building-store"></i> Minhas Lojas</div>
+        <div class="sh"><i class="ti ti-building-store"></i> Minhas Lojas <span id="contadorMinhasLojas" style="font-weight:400;color:var(--text3);"></span></div>
         <div id="listaLojas"></div>
         <button class="btn-primary btn-w" onclick="addNovaLoja()" style="margin-top:.5rem;"><i class="ti ti-plus"></i> Adicionar nova loja</button>
         <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);padding:.5rem .75rem;margin-top:.5rem;display:flex;align-items:center;justify-content:center;gap:6px;">
@@ -796,7 +796,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           </div>
         </div>
 
-        <div class="sh"><i class="ti ti-building-store"></i> Minhas lojas</div>
+        <div class="sh"><i class="ti ti-building-store"></i> Minhas lojas <span id="contadorAssinaturaLojas" style="font-weight:400;color:var(--text3);"></span></div>
         <div id="assinaturaLojasList"></div>
       </section>
 
@@ -1783,7 +1783,8 @@ function toggleSidebar(){
 
 /* ── STORE MODAL (centralizado) ── */
 function openStoreModal(){
-  const available=currentUser.role==='owner'?lojas:lojas.filter(l=>l.id===currentUser.lojaId);
+  const available=(currentUser.role==='owner'?lojas:lojas.filter(l=>l.id===currentUser.lojaId))
+    .slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
   el('storeModalList').innerHTML=available.map(l=>`
     <div onclick="selectLoja(${l.id})" style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:.375rem;background:${l.id===currentLojaId?'var(--accent-bg)':'var(--bg3)'};border:1px solid ${l.id===currentLojaId?'var(--accent-d)':'var(--border)'};">
       <div style="display:flex;align-items:center;gap:10px;">
@@ -3025,6 +3026,10 @@ async function salvarLoja(){
   const cnpjInput=el('lojaCnpj').value.trim();
   if(!nomeInput){showToast('Preencha o nome da loja');el('lojaNome').focus();return;}
   if(!cnpjInput){showToast('Preencha o CNPJ ou CPF da loja — o Asaas exige isso pra gerar a cobrança da assinatura');el('lojaCnpj').focus();return;}
+  if(cnpjInput!==loja.cnpj){
+    const ok=await checarCnpjDuplicado(cnpjInput,targetId);
+    if(!ok)return;
+  }
   loja.nome=nomeInput;
   loja.endereco=el('lojaEndereco').value.trim();
   loja.cidade=el('lojaCidade').value.trim()||loja.cidade;
@@ -3109,11 +3114,24 @@ function addNovaLoja(){
   setTimeout(()=>el('novaLojaNome').focus(),100);
 }
 function fecharNovaLojaModal(){el('novaLojaModal').classList.remove('open');}
+async function checarCnpjDuplicado(cnpj,lojaIdExcluir){
+  if(!cnpj)return true;
+  try{
+    let q=db.from('lojas').select('id,nome').eq('cnpj',cnpj);
+    if(lojaIdExcluir)q=q.neq('id',lojaIdExcluir);
+    const {data,error}=await q;
+    if(error||!data||!data.length)return true;
+    const nomes=data.map(l=>l.nome).join(', ');
+    return confirm(`Esse CNPJ/CPF já está cadastrado em: ${nomes}.\n\nSe for o mesmo dono usando o mesmo documento em várias lojas de propósito, clique OK pra continuar. Se for engano, clique Cancelar e revisa o número.`);
+  }catch(e){return true;}
+}
 async function criarNovaLojaSubmit(){
   const nome=el('novaLojaNome').value.trim();
   const cnpj=el('novaLojaCnpj').value.trim();
   if(!nome){showToast('Preencha o nome da loja');el('novaLojaNome').focus();return;}
   if(!cnpj){showToast('Preencha o CNPJ ou CPF — o Asaas exige isso pra gerar a cobrança da assinatura');el('novaLojaCnpj').focus();return;}
+  const cnpjOk=await checarCnpjDuplicado(cnpj,null);
+  if(!cnpjOk)return;
   const endereco=el('novaLojaEndereco').value.trim();
   const cidade=el('novaLojaCidade').value.trim();
   const tel=el('novaLojaTel').value.trim();
@@ -3138,6 +3156,7 @@ async function criarNovaLojaSubmit(){
 }
 function renderLojas(){
   const ordenadas=[...lojas].sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+  const contador=el('contadorMinhasLojas');if(contador)contador.textContent='('+ordenadas.length+')';
   el('listaLojas').innerHTML=ordenadas.map((l,i)=>`
     <div class="data-card">
       <div style="display:flex;flex-direction:column;gap:2px;">
@@ -4200,6 +4219,7 @@ async function renderAssinaturasTodasLojas(){
     const {data,error}=await db.rpc('assinaturas_das_minhas_lojas');
     if(error||!data){cont.innerHTML='';return;}
     const lojasDoUsuario=data.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
+    const contador=el('contadorAssinaturaLojas');if(contador)contador.textContent='('+lojasDoUsuario.length+')';
     if(!lojasDoUsuario.length){cont.innerHTML='';return;}
     cont.innerHTML=lojasDoUsuario.map(l=>{
       const status=l.status;
