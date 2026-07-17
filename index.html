@@ -1161,7 +1161,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 <div class="modal-overlay" id="storeModal" onclick="if(event.target===this)closeStoreModal()">
   <div class="modal-box">
     <div class="modal-head"><span class="modal-title"><i class="ti ti-building-store"></i> Trocar de loja</span><button class="btn-icon" onclick="closeStoreModal()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
-    <div id="storeModalList"></div>
+    <input type="text" id="storeModalBusca" placeholder="Buscar loja ou dono…" oninput="renderStoreModalList()" style="width:100%;margin-bottom:.75rem;"/>
+    <div id="storeModalList" style="max-height:55vh;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -1782,20 +1783,51 @@ function toggleSidebar(){
 }
 
 /* ── STORE MODAL (centralizado) ── */
-function openStoreModal(){
-  const available=(currentUser.role==='owner'?lojas:lojas.filter(l=>l.id===currentUser.lojaId))
-    .slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
-  el('storeModalList').innerHTML=available.map(l=>`
-    <div onclick="selectLoja(${l.id})" style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:.375rem;background:${l.id===currentLojaId?'var(--accent-bg)':'var(--bg3)'};border:1px solid ${l.id===currentLojaId?'var(--accent-d)':'var(--border)'};">
+let donoPorLojaSwitcher={};
+async function openStoreModal(){
+  el('storeModalBusca').value='';
+  if(currentUser.isAdmin){
+    try{
+      const {data}=await db.from('loja_membros').select('loja_id, perfis(nome)').eq('role','owner');
+      donoPorLojaSwitcher={};
+      (data||[]).forEach(d=>{if(d.perfis&&d.perfis.nome)donoPorLojaSwitcher[d.loja_id]=d.perfis.nome;});
+    }catch(e){donoPorLojaSwitcher={};}
+  }
+  renderStoreModalList();
+  el('storeModal').classList.add('open');
+}
+function renderStoreModalList(){
+  const souAdmin=currentUser.isAdmin;
+  const busca=(el('storeModalBusca').value||'').toLowerCase();
+  let available=(currentUser.role==='owner'?lojas:lojas.filter(l=>l.id===currentUser.lojaId)).slice();
+  available=available.map(l=>({...l,donoNome:souAdmin?(donoPorLojaSwitcher[l.id]||'Sem dono definido'):null}));
+  available.sort((a,b)=>{
+    if(souAdmin){
+      const c=a.donoNome.localeCompare(b.donoNome,'pt-BR',{sensitivity:'base'});
+      if(c!==0)return c;
+    }
+    return a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'});
+  });
+  if(busca){
+    available=available.filter(l=>l.nome.toLowerCase().includes(busca)||(l.donoNome&&l.donoNome.toLowerCase().includes(busca)));
+  }
+  if(!available.length){el('storeModalList').innerHTML='<p style="text-align:center;color:var(--text3);font-size:13px;padding:1rem;">Nenhuma loja encontrada.</p>';return;}
+  let html='';
+  available.forEach((l,i)=>{
+    if(souAdmin&&(i===0||available[i-1].donoNome!==l.donoNome)){
+      html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:${i===0?'0':'.75rem'} 0 .375rem;"><i class="ti ti-user"></i> ${l.donoNome}</div>`;
+    }
+    html+=`<div onclick="selectLoja(${l.id})" style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:.375rem;background:${l.id===currentLojaId?'var(--accent-bg)':'var(--bg3)'};border:1px solid ${l.id===currentLojaId?'var(--accent-d)':'var(--border)'};">
       <div style="display:flex;align-items:center;gap:10px;">
         <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           ${l.logo?`<img src="${l.logo}" style="width:100%;height:100%;object-fit:cover;">`:'<i class="ti ti-building-store" style="font-size:17px;color:var(--text3);"></i>'}
         </div>
-        <div><p style="font-size:14px;font-weight:600;">${l.nome}</p><p style="font-size:12px;color:var(--text2);">${l.cidade}</p></div>
+        <div><p style="font-size:14px;font-weight:600;">${l.nome}</p><p style="font-size:12px;color:var(--text2);">${l.cidade||''}</p></div>
       </div>
       ${l.id===currentLojaId?'<i class="ti ti-check" style="color:var(--accent);font-size:18px;"></i>':''}
-    </div>`).join('');
-  el('storeModal').classList.add('open');
+    </div>`;
+  });
+  el('storeModalList').innerHTML=html;
 }
 function closeStoreModal(){el('storeModal').classList.remove('open');}
 async function selectLoja(id){
