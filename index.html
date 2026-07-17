@@ -4552,10 +4552,14 @@ async function garantirCategoriasDoImport(brutas,lojaId){
   let ordem=categoriasTodas.length?Math.max(...categoriasTodas.map(c=>c.ordem)):0;
   const novasLinhas=[...naoResolvidas.values()].map(txt=>{
     ordem++;
-    return{loja_id:lojaId,chave:slugifyCategoria(txt),nome:tituloBonito(txt),emoji:'📦',ordem,ativa:true};
+    return{loja_id:lojaId,chave:slugifyCategoria(txt),nome:tituloBonito(txt),emoji:'📦',ordem};
   });
-  const {error}=await db.from('categorias').upsert(novasLinhas,{onConflict:'loja_id,chave'});
-  if(error)return{criadas:0,erro:error};
+  for(const linha of novasLinhas){
+    const {error}=await db.rpc('criar_categoria_import',{
+      p_loja_id:linha.loja_id,p_chave:linha.chave,p_nome:linha.nome,p_emoji:linha.emoji,p_ordem:linha.ordem
+    });
+    if(error)return{criadas:0,erro:error};
+  }
   const {data}=await db.from('categorias').select('*').eq('loja_id',lojaId).order('ordem');
   if(data){categoriasTodas=data;categorias=categoriasTodas.filter(c=>c.ativa);}
   return{criadas:novasLinhas.length,erro:null};
