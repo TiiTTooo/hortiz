@@ -390,6 +390,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="master" onclick="switchTab('master')" id="sideMaster" style="display:none;color:var(--amber);"><i class="ti ti-crown"></i> Master</div>
     </div>
 
+    <div id="avisoVencimentoBanner" style="display:none;background:var(--amber-bg);color:var(--amber);padding:.625rem 1.25rem;font-size:13px;font-weight:600;text-align:center;border-bottom:1px solid var(--amber);">
+      <i class="ti ti-alert-triangle"></i> <span id="avisoVencimentoTexto"></span>
+      <a href="#" onclick="event.preventDefault();switchTab('assinatura')" style="color:inherit;text-decoration:underline;margin-left:6px;">Ver assinatura</a>
+    </div>
+
     <main id="mainContent">
 
       <!-- HOME -->
@@ -1727,13 +1732,26 @@ async function carregarMinhasLojas(){
   if(!currentUser)return;
   try{
     const {data,error}=await db.from('loja_membros').select('role, lojas(*)').eq('user_id',currentUser.id);
-    if(error||!data)return;
-    data.filter(m=>m.lojas&&m.lojas.ativa!==false).forEach(m=>{
-      const l=m.lojas;
-      const lojaObj={id:l.id,nome:l.nome,cidade:l.cidade||'',logo:l.logo||'',cnpj:l.cnpj||'',tel:l.tel||'',endereco:l.endereco||'',cobrancaPara:l.cobranca_para||'loja',ordem:l.ordem||0};
-      const idx=lojas.findIndex(x=>x.id===l.id);
-      if(idx===-1) lojas.push(lojaObj); else lojas[idx]=lojaObj;
-    });
+    if(!error&&data){
+      data.filter(m=>m.lojas&&m.lojas.ativa!==false).forEach(m=>{
+        const l=m.lojas;
+        const lojaObj={id:l.id,nome:l.nome,cidade:l.cidade||'',logo:l.logo||'',cnpj:l.cnpj||'',tel:l.tel||'',endereco:l.endereco||'',cobrancaPara:l.cobranca_para||'loja',ordem:l.ordem||0};
+        const idx=lojas.findIndex(x=>x.id===l.id);
+        if(idx===-1) lojas.push(lojaObj); else lojas[idx]=lojaObj;
+      });
+    }
+    // Admin master enxerga e consegue migrar pra QUALQUER loja do sistema,
+    // não só as que ele é dono/membro de verdade.
+    if(currentUser.isAdmin){
+      const {data:todasData,error:todasErr}=await db.from('lojas').select('*').eq('ativa',true).order('ordem');
+      if(!todasErr&&todasData){
+        todasData.forEach(l=>{
+          const lojaObj={id:l.id,nome:l.nome,cidade:l.cidade||'',logo:l.logo||'',cnpj:l.cnpj||'',tel:l.tel||'',endereco:l.endereco||'',cobrancaPara:l.cobranca_para||'loja',ordem:l.ordem||0};
+          const idx=lojas.findIndex(x=>x.id===l.id);
+          if(idx===-1) lojas.push(lojaObj); else lojas[idx]=lojaObj;
+        });
+      }
+    }
     renderLojas();
     await carregarCategoriasConsolidado();
   }catch(e){}
@@ -1951,6 +1969,7 @@ async function checkSubscription(){
   }catch(e){}
   atualizarLabelsPreco();
   updateSubStatus();
+  atualizarAvisoVencimento();
   const souGerente=currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
@@ -1967,6 +1986,20 @@ async function checkSubscription(){
     el('subWall').style.display='none';
   }
   atualizarBloqueioMenu();
+}
+function atualizarAvisoVencimento(){
+  const banner=el('avisoVencimentoBanner');
+  if(!banner)return;
+  const podeVer=currentUser&&(currentUser.role==='owner'||currentUser.isAdmin);
+  if(!podeVer||subscription.status!=='active'){banner.style.display='none';return;}
+  const diasParaVencer=Math.ceil((subscription.expiresAt-new Date())/86400000);
+  if(diasParaVencer>=0&&diasParaVencer<=3){
+    const quando=diasParaVencer===0?'hoje':diasParaVencer===1?'amanhã':'em '+diasParaVencer+' dias';
+    el('avisoVencimentoTexto').textContent=`Sua assinatura vence ${quando} (${subscription.expiresAt.toLocaleDateString('pt-BR')}). Confirma que o pagamento vai passar, pra não perder o acesso.`;
+    banner.style.display='block';
+  } else {
+    banner.style.display='none';
+  }
 }
 function atualizarBloqueioMenu(){
   const bloquear=acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
