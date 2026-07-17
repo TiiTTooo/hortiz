@@ -4190,21 +4190,18 @@ async function renderAssinaturasTodasLojas(){
   const cont=el('assinaturaLojasList');if(!cont||!currentUser)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
   try{
-    const {data:membrosData,error}=await db.from('loja_membros').select('lojas(id,nome,logo)').eq('user_id',currentUser.id);
-    if(error||!membrosData){cont.innerHTML='';return;}
-    const lojasDoUsuario=membrosData.filter(m=>m.lojas).map(m=>m.lojas).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
+    const {data,error}=await db.rpc('assinaturas_das_minhas_lojas');
+    if(error||!data){cont.innerHTML='';return;}
+    const lojasDoUsuario=data.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}));
     if(!lojasDoUsuario.length){cont.innerHTML='';return;}
-    const idsLojas=lojasDoUsuario.map(l=>l.id);
-    const {data:subsData}=await db.from('assinaturas').select('*').in('loja_id',idsLojas);
     cont.innerHTML=lojasDoUsuario.map(l=>{
-      const sub=(subsData||[]).find(s=>s.loja_id===l.id);
-      const status=sub?sub.status:'sem_assinatura';
+      const status=l.status;
       const label={trial:'⏳ Trial',ativa:'✅ Ativa',isenta:'🔗 Vinculada',vencida:'🔴 Vencida',cancelada:'⚫ Cancelada',sem_assinatura:'⚪ Sem assinatura'}[status]||status;
       const cor={trial:'var(--amber)',ativa:'var(--accent)',isenta:'var(--blue)',vencida:'var(--red)',cancelada:'var(--text3)',sem_assinatura:'var(--text3)'}[status]||'var(--text2)';
-      const valorMensal=parseFloat(sub&&sub.valor_mensal||250);
+      const valorMensal=parseFloat(l.valor_mensal||250);
       const precisaPagar=(status==='trial'||status==='vencida'||status==='sem_assinatura');
-      const ativa=l.id===currentLojaId;
-      const vencInfo=(status==='ativa'&&sub&&sub.proxima_cobranca)?' · vence em '+formatBR(sub.proxima_cobranca):'';
+      const ativa=l.loja_id===currentLojaId;
+      const vencInfo=(status==='ativa'&&l.proxima_cobranca)?' · vence em '+formatBR(l.proxima_cobranca):'';
       return `<div class="card" style="padding:.875rem 1rem;margin-bottom:.625rem;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:${precisaPagar?'.625rem':'0'};">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -4218,12 +4215,12 @@ async function renderAssinaturasTodasLojas(){
           </div>
         </div>
         ${precisaPagar?`<div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-          <button class="btn-primary btn-sm" style="flex:1;min-width:130px;" onclick="selecionarPlanoLoja(${l.id},'mensal',this)"><i class="ti ti-calendar-month"></i> Mensal — R$ ${valorMensal.toLocaleString('pt-BR')}/mês</button>
+          <button class="btn-primary btn-sm" style="flex:1;min-width:130px;" onclick="selecionarPlanoLoja(${l.loja_id},'mensal',this)"><i class="ti ti-calendar-month"></i> Mensal — R$ ${valorMensal.toLocaleString('pt-BR')}/mês</button>
         </div>
-        <div id="payLinkArea-${l.id}" style="display:none;margin-top:.625rem;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.75rem;text-align:center;">
+        <div id="payLinkArea-${l.loja_id}" style="display:none;margin-top:.625rem;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.75rem;text-align:center;">
           <p style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:.375rem;">Link de pagamento gerado!</p>
-          <a id="payLink-${l.id}" href="#" target="_blank" class="btn-primary btn-sm" style="display:inline-block;text-decoration:none;"><i class="ti ti-external-link"></i> Pagar agora</a>
-        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.id},'${l.nome.replace(/'/g,"\\'")}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
+          <a id="payLink-${l.loja_id}" href="#" target="_blank" class="btn-primary btn-sm" style="display:inline-block;text-decoration:none;"><i class="ti ti-external-link"></i> Pagar agora</a>
+        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.loja_id},'${l.nome.replace(/'/g,"\\'")}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
       </div>`;
     }).join('');
   }catch(e){cont.innerHTML='';}
