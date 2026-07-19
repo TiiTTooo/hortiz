@@ -465,7 +465,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <div style="display:flex;gap:8px;margin-bottom:.5rem;flex-wrap:wrap;">
               <select id="tipoPlan" onchange="onTipoPlanChange()" style="flex:1;min-width:130px;">
                 <option value="caixa">📦 Caixa</option>
-                <option value="unidade">🔢 Unidade</option>
+                <option value="unidade" selected>🔢 Unidade</option>
               </select>
               <div id="unidCaixaWrap" style="flex:1;min-width:140px;position:relative;">
                 <input id="unidPorCaixa" type="number" placeholder="Unidades por caixa (opcional)" step="1" min="1" style="padding-right:2.5rem;"/>
@@ -527,7 +527,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div id="voltarComprasNormalWrap" style="display:none;margin-bottom:.625rem;">
             <a href="#" onclick="event.preventDefault();voltarComprasNormal()" style="font-size:12px;color:var(--text2);">← Voltar pra visão da loja atual</a>
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-bottom:.625rem;">
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:.625rem;flex-wrap:wrap;">
+            <button class="btn-ghost btn-sm" onclick="exportarPedidoConsolidadoTotalPdf()"><i class="ti ti-file-type-pdf"></i> Exportar lista total (todas as lojas somadas)</button>
             <button class="btn-ghost btn-sm" onclick="exportarRelatorioCompradorPdf()"><i class="ti ti-file-type-pdf"></i> Exportar relatório por loja (PDF)</button>
           </div>
           <div class="cat-btn-bar" style="display:flex;gap:6px;flex-wrap:wrap;" id="comprCatBtns"></div>
@@ -1407,7 +1408,7 @@ function renderTodosSeletoresCategoria(){
   const listaCons=categoriasConsolidado.length?categoriasConsolidado:lista;
   renderCatBtnBar('pedTabelaCatBtns',lista,currentCatTab,'switchCatTabela',{btnStyle:'font-size:16px;'});
   renderCatBtnBar('ceasaCatBtns',lista,ceasaCatAtiva,'switchCeasaCat',{btnStyle:'flex:1;min-width:90px;font-size:15px;',contador:true});
-  renderCatBtnBar('comprCatBtns',listaCons,comprCatAtiva,'selecionarCatComprador',{btnStyle:'flex:1;min-width:90px;font-size:15px;'});
+  renderCatBtnBar('comprCatBtns',listaCons,comprCatAtiva,'selecionarCatComprador',{btnStyle:'flex:1;min-width:90px;font-size:15px;',contador:true});
   renderCatBtnBar('fornFiltroCatBtns',lista,fornFiltroCatSelecionada,'selecionarFornFiltroCat',{btnStyle:'font-size:14px;',incluirTodas:true});
   renderCatBtnBar('fornCadCatBtns',lista,fornCadCatSelecionada,'selecionarFornCat',{btnStyle:'font-size:15px;'});
   renderSeletoresCategoriaSelect();
@@ -2442,7 +2443,7 @@ function renderTabelaGrid(){
   el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/cx</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
       const d=tabelaDraft[cat][p]||'';
-      const dt=tabelaDraftTipo[cat][p]||'caixa';
+      const dt=tabelaDraftTipo[cat][p]||'unidade';
       const du=tabelaDraftUnid[cat][p]||'';
       const hasQ=parseFloat(d)>0;
       return`<tr class="${hasQ?'has-qty':''}">
@@ -2468,7 +2469,7 @@ function updateUnidCell(i,cat,p){
 function updateSalvarLabel(){let t=0;Object.keys(PRODUTOS).forEach(c=>PRODUTOS[c].forEach(p=>{if(parseFloat(tabelaDraft[c][p])>0)t++;}));el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';}
 function salvarTabela(){
   saveDraftFromDOM();let n=0;
-  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{const qtd=parseFloat(tabelaDraft[cat][p])||0;if(qtd>0){const tipo=tabelaDraftTipo[cat][p]||'caixa';const unid=tipo==='caixa'?(parseInt(tabelaDraftUnid[cat][p])||null):null;const novoItem={id:nextId++,data:currentDate,produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,status:'pendente',lojaId:currentLojaId};itensPedido.push(novoItem);syncPedidoInsert(novoItem);tabelaDraft[cat][p]='';tabelaDraftTipo[cat][p]='caixa';tabelaDraftUnid[cat][p]='';n++;}});});
+  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{const qtd=parseFloat(tabelaDraft[cat][p])||0;if(qtd>0){const tipo=tabelaDraftTipo[cat][p]||'unidade';const unid=tipo==='caixa'?(parseInt(tabelaDraftUnid[cat][p])||null):null;const novoItem={id:nextId++,data:currentDate,produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,status:'pendente',lojaId:currentLojaId};itensPedido.push(novoItem);syncPedidoInsert(novoItem);tabelaDraft[cat][p]='';tabelaDraftTipo[cat][p]='unidade';tabelaDraftUnid[cat][p]='';n++;}});});
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
   if(n>0)showToast(`${n} iten${n===1?'':'s'} adicionado${n===1?'':'s'}!`);
 }
@@ -4892,6 +4893,61 @@ async function exportarRelatorioCompradorPdf(){
     showToast('Relatório gerado!');
   }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
 }
+async function buscarPedidoConsolidadoAgregado(){
+  const idsLojas=lojas.map(l=>l.id);
+  if(!idsLojas.length)return[];
+  const {data,error}=await db.from('itens_pedido').select('*').in('loja_id',idsLojas).eq('data',currentDate).eq('status','pendente');
+  if(error||!data)return[];
+  const porProduto={};
+  data.forEach(item=>{
+    const key=item.categoria+'||'+normalizarNome(item.produto);
+    if(!porProduto[key])porProduto[key]={categoria:item.categoria,produto:item.produto,tipo:item.tipo,total:0,lojasSet:new Set()};
+    porProduto[key].total+=item.qtd;
+    porProduto[key].lojasSet.add(item.loja_id);
+  });
+  return Object.values(porProduto);
+}
+async function atualizarContadoresComprador(){
+  const linhas=await buscarPedidoConsolidadoAgregado();
+  const contagem={};
+  linhas.forEach(l=>{contagem[l.categoria]=(contagem[l.categoria]||0)+1;});
+  listaCatComFallback().forEach(c=>{
+    const span=document.getElementById('catCount-'+c.chave);
+    if(span)span.textContent=contagem[c.chave]?'('+contagem[c.chave]+')':'';
+  });
+}
+async function exportarPedidoConsolidadoTotalPdf(){
+  if(typeof window.jspdf==='undefined'){showToast('A biblioteca de PDF ainda não carregou — espera um instante e tenta de novo.');return;}
+  showToast('Gerando PDF consolidado…');
+  try{
+    const linhas=(await buscarPedidoConsolidadoAgregado())
+      .sort((a,b)=>labelCat(a.categoria).localeCompare(labelCat(b.categoria),'pt-BR')||a.produto.localeCompare(b.produto,'pt-BR'));
+    if(!linhas.length){showToast('Nenhum pedido pendente pra exportar.');return;}
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Hortiz — Pedido consolidado (todas as lojas)',14,18);
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Data: ${formatBR(currentDate)} · ${lojas.length} loja(s) vinculada(s)`,14,26);
+    doc.setTextColor(0);
+    const contagem={};
+    linhas.forEach(l=>{contagem[l.categoria]=(contagem[l.categoria]||0)+1;});
+    doc.setFontSize(9);
+    const resumoTxt=Object.keys(contagem).map(c=>emojiCat(c)+' '+labelCat(c)+': '+contagem[c]).join('    ');
+    doc.text(resumoTxt,14,34,{maxWidth:180});
+    const body=linhas.map(l=>[labelCat(l.categoria),l.produto,String(l.total)+(l.tipo==='caixa'?' cx':' un'),String(l.lojasSet.size)]);
+    doc.autoTable({
+      startY:42,
+      head:[['Categoria','Produto','Qtd total','Lojas']],
+      body,
+      styles:{fontSize:9,cellPadding:4},
+      headStyles:{fillColor:[96,165,250]}
+    });
+    doc.save(`pedido-consolidado-total-${currentDate}.pdf`);
+    showToast('PDF consolidado exportado!');
+  }catch(e){showToast('Erro ao exportar: '+e.message);}
+}
 async function renderComprasComprador(){
   const cont=el('listaComprasComprador');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);padding:.5rem 0;">Carregando…</p>';
@@ -4920,7 +4976,9 @@ async function renderComprasComprador(){
         </div>
         <a href="#" onclick="event.preventDefault();toggleDetalheComprador(${idx})" style="font-size:11px;color:var(--text2);text-decoration:underline;">ver por loja</a>
         <div id="detalheComprador-${idx}" style="display:none;margin:.5rem 0;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);">
-          ${l.origens.map(o=>{const loja=lojas.find(x=>x.id===o.lojaId);return `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>${loja?loja.nome:'Loja '+o.lojaId}</span><span>${o.qtd}</span></div>`;}).join('')}
+          ${l.origens.map(o=>({...o,nomeLoja:(lojas.find(x=>x.id===o.lojaId)||{}).nome||'Loja '+o.lojaId}))
+            .sort((a,b)=>a.nomeLoja.localeCompare(b.nomeLoja,'pt-BR',{sensitivity:'base'}))
+            .map(o=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>${o.nomeLoja}</span><span>${o.qtd}</span></div>`).join('')}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin:.5rem 0 .4rem;">
           <div>
@@ -4949,6 +5007,7 @@ async function renderComprasComprador(){
         <button class="btn-primary btn-w" onclick="confirmarCompraComprador(${idx})"><i class="ti ti-check"></i> Confirmar (distribui pra cada loja)</button>
       </div>`).join('');
     renderComprasCompradorFeitas();
+    atualizarContadoresComprador();
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
 }
 function toggleDetalheComprador(idx){
@@ -5309,6 +5368,7 @@ function init(){
   const fdAte=el('fornDataAte');if(fdAte)fdAte.value=currentDate;
   el('despesaList').innerHTML=DESPESAS_TIPO.map(t=>`<option value="${t}">`).join('');
   renderTodosSeletoresCategoria();
+  onTipoPlanChange();
   populateProdutos('catPlan','prodPlan');populateProdutos('catAvulso','prodAvulso');populateFornecedores('catAvulso','fornAvulsoList');
   refreshHeadings();renderHistorico();renderAll();switchCatTabela(listaCatComFallback()[0].chave);
   populateInvLoja();renderUsuarios();renderLojas();initColorSwatches();renderFornecedoresCadastro();
