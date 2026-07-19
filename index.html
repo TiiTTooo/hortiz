@@ -4934,7 +4934,7 @@ async function exportarPedidoConsolidadoTotalPdf(){
     const contagem={};
     linhas.forEach(l=>{contagem[l.categoria]=(contagem[l.categoria]||0)+1;});
     doc.setFontSize(9);
-    const resumoTxt=Object.keys(contagem).map(c=>emojiCat(c)+' '+labelCat(c)+': '+contagem[c]).join('    ');
+    const resumoTxt=Object.keys(contagem).map(c=>labelCat(c)+': '+contagem[c]).join('    ·    ');
     doc.text(resumoTxt,14,34,{maxWidth:180});
     const body=linhas.map(l=>[labelCat(l.categoria),l.produto,String(l.total)+(l.tipo==='caixa'?' cx':' un'),String(l.lojasSet.size)]);
     doc.autoTable({
