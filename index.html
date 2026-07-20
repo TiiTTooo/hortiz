@@ -833,8 +833,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
         <!-- Filtro -->
         <div style="display:flex;gap:8px;margin-bottom:.75rem;flex-wrap:wrap;">
-          <input id="masterBusca" placeholder="Buscar loja…" oninput="renderMaster()" style="flex:2;min-width:160px;"/>
-          <select id="masterFiltroStatus" onchange="renderMaster()" style="flex:1;min-width:130px;">
+          <input id="masterBusca" placeholder="Buscar loja…" oninput="renderMasterLista()" style="flex:2;min-width:160px;"/>
+          <select id="masterFiltroStatus" onchange="renderMasterLista()" style="flex:1;min-width:130px;">
             <option value="">Todos os status</option>
             <option value="trial">Em trial</option>
             <option value="ativa">Ativas</option>
@@ -4010,8 +4010,8 @@ function verificarPendentesOntem(){
 /* ══ PAINEL MASTER ══ */
 let asaasKey='', asaasModo='sandbox';
 
-async function renderMaster(){
-  if(!currentUser||!currentUser.isAdmin)return;
+let masterDadosCarregados=false;
+async function carregarDadosMaster(){
   // Carrega a configuração ATUAL do Asaas (chave e modo) já salva no banco,
   // pra tela nunca mais mostrar "Sandbox" por padrão quando na verdade é Produção.
   try{
@@ -4027,21 +4027,30 @@ async function renderMaster(){
     }
   }catch(e){}
   // Carregar todas as lojas + assinaturas
-  // Buscar lojas e assinaturas separadamente para garantir dados frescos
   const {data:lojasData}=await db.from('lojas').select('*').order('id');
   const {data:subsData}=await db.from('assinaturas').select('*');
   const {data:donosData}=await db.from('loja_membros').select('loja_id, perfis(nome)').eq('role','owner');
-  if(!lojasData){el('masterLista').innerHTML='<div class="empty">Erro ao carregar dados.</div>';return;}
+  if(!lojasData){el('masterLista').innerHTML='<div class="empty">Erro ao carregar dados.</div>';return false;}
   const donoNomePorLoja={};
   (donosData||[]).forEach(d=>{if(d.perfis&&d.perfis.nome)donoNomePorLoja[d.loja_id]=d.perfis.nome;});
-  // Juntar manualmente
-  const data=lojasData.map(l=>({
+  todasLojas=lojasData.map(l=>({
     ...l,
     donoNome:donoNomePorLoja[l.id]||'zzz — Sem dono definido',
     assinaturas: subsData?subsData.filter(s=>s.loja_id===l.id):[]
   }));
-  if(!data){el('masterLista').innerHTML='<div class="empty">Erro ao carregar dados.</div>';return;}
-  todasLojas=data;
+  masterDadosCarregados=true;
+  return true;
+}
+async function renderMaster(forcar){
+  if(!currentUser||!currentUser.isAdmin)return;
+  if(!masterDadosCarregados||forcar){
+    const ok=await carregarDadosMaster();
+    if(!ok)return;
+  }
+  renderMasterLista();
+}
+function renderMasterLista(){
+  const data=todasLojas;
   const busca=(el('masterBusca').value||'').toLowerCase();
   const filtroStatus=el('masterFiltroStatus').value;
   // Agrupado por dono (ordem alfabética do nome do dono), e dentro de cada grupo,
@@ -4151,7 +4160,7 @@ async function excluirLojaDefinitivamenteMaster(lojaId,nomeLoja){
     const {error}=await db.rpc('excluir_loja_definitivamente',{p_loja_id:lojaId});
     if(error){showToast('Erro ao excluir: '+error.message);return;}
     showToast('Loja excluída definitivamente.');
-    renderMaster();
+    renderMaster(true);
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function desativarLojaMaster(lojaId,nomeLoja){
@@ -4160,7 +4169,7 @@ async function desativarLojaMaster(lojaId,nomeLoja){
     const {error}=await db.from('lojas').update({ativa:false}).eq('id',lojaId);
     if(error){showToast('Erro: '+error.message);return;}
     showToast('Loja desativada.');
-    renderMaster();
+    renderMaster(true);
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function reativarLoja(lojaId){
@@ -4169,7 +4178,7 @@ async function reativarLoja(lojaId){
     const {error}=await db.from('lojas').update({ativa:true}).eq('id',lojaId);
     if(error){showToast('Erro: '+error.message);return;}
     showToast('Loja reativada!');
-    renderMaster();
+    renderMaster(true);
   }catch(e){showToast('Erro: '+e.message);}
 }
 
@@ -4241,10 +4250,14 @@ async function gerarCobrancaLoja(lojaId){
     planoParaCobrar=planoEl.value;
     if(!isNaN(valorAtual)&&valorAtual>=0){
       try{
-        await db.from('assinaturas').upsert({
+        const {error:erroSalvar}=await db.from('assinaturas').upsert({
           loja_id:lojaId,valor_mensal:valorAtual,plano:planoParaCobrar,updated_at:new Date().toISOString()
         },{onConflict:'loja_id'});
-      }catch(e){showToast('Aviso: não consegui salvar o valor antes de gerar a cobrança ('+e.message+'). Conferindo com o que já estava salvo…');}
+        if(erroSalvar){
+          showToast('Erro ao salvar o valor antes de gerar a cobrança: '+erroSalvar.message);
+          return;
+        }
+      }catch(e){showToast('Erro ao salvar o valor antes de gerar a cobrança: '+e.message);return;}
     }
   }
   if(!planoParaCobrar){
