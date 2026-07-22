@@ -16,8 +16,11 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+// Travado no domínio do app em vez de '*': a autenticação aqui é por Bearer
+// token (não cookie), então CORS aberto não era explorável por CSRF passivo —
+// mas restringir é defesa em profundidade sem custo real.
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://hortiz.vercel.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -117,18 +120,36 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Loja não encontrada' }, 404);
     }
 
-    // 5.05) Limite de velocidade: barra chamadas repetidas em menos de 8 segundos
-    //       pra essa mesma loja, evitando clique duplicado/abuso gerando várias
-    //       cobranças ou clientes em sequência no Asaas. Usa um campo dedicado
-    //       (não o updated_at, que o Master também atualiza no auto-salvamento
-    //       de valor — usar o mesmo campo bloquearia toda chamada vinda de lá).
-    if (sub?.ultima_tentativa_cobranca) {
-      const segundosDesdeUltima = (Date.now() - new Date(sub.ultima_tentativa_cobranca).getTime()) / 1000;
-      if (segundosDesdeUltima < 8) {
-        return jsonResponse(
-          { error: 'Aguarda alguns segundos antes de tentar gerar a cobrança de novo.' },
-          429,
-        );
+    // 5.05) Limite de velocidade: barra chamadas repetidas em menos de 8 segundos.
+    //       Antes checava só a loja atual — um dono com várias lojas contornava
+    //       o cooldown trocando de loja em sequência. Agora olha a tentativa mais
+    //       recente entre TODAS as lojas que esse usuário é owner, não só a
+    //       loja_id chamada agora. Usa um campo dedicado (não o updated_at, que
+    //       o Master também atualiza no auto-salvamento de valor — usar o mesmo
+    //       campo bloquearia toda chamada vinda de lá).
+    const { data: lojasDoUsuario } = await supabase
+      .from('loja_membros')
+      .select('loja_id')
+      .eq('user_id', userId)
+      .eq('role', 'owner');
+    const idsLojasDoUsuario = (lojasDoUsuario || []).map((l: any) => l.loja_id);
+    if (idsLojasDoUsuario.length) {
+      const { data: tentativasRecentes } = await supabase
+        .from('assinaturas')
+        .select('ultima_tentativa_cobranca')
+        .in('loja_id', idsLojasDoUsuario)
+        .not('ultima_tentativa_cobranca', 'is', null)
+        .order('ultima_tentativa_cobranca', { ascending: false })
+        .limit(1);
+      const ultimaTentativa = tentativasRecentes?.[0]?.ultima_tentativa_cobranca;
+      if (ultimaTentativa) {
+        const segundosDesdeUltima = (Date.now() - new Date(ultimaTentativa).getTime()) / 1000;
+        if (segundosDesdeUltima < 8) {
+          return jsonResponse(
+            { error: 'Aguarda alguns segundos antes de tentar gerar a cobrança de novo.' },
+            429,
+          );
+        }
       }
     }
     await supabase.from('assinaturas').update({ ultima_tentativa_cobranca: new Date().toISOString() }).eq('loja_id', loja_id);

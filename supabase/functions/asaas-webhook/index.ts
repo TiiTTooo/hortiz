@@ -11,6 +11,19 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+// Compara duas strings em tempo constante (não sai mais rápido do laço assim
+// que acha a primeira diferença). Fecha uma brecha teórica de timing attack
+// na validação do token do Asaas — na prática muito difícil de explorar via
+// rede, mas o custo de fechar é zero.
+function compararTokenSeguro(a: string, b: string): boolean {
+  const bufA = new TextEncoder().encode(a);
+  const bufB = new TextEncoder().encode(b);
+  if (bufA.length !== bufB.length) return false;
+  let diff = 0;
+  for (let i = 0; i < bufA.length; i++) diff |= bufA[i] ^ bufB[i];
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -25,7 +38,7 @@ Deno.serve(async (req: Request) => {
       .eq('chave', 'asaas_webhook_token')
       .single();
 
-    if (!tokenRow || tokenRecebido !== tokenRow.valor) {
+    if (!tokenRow || !compararTokenSeguro(tokenRecebido, tokenRow.valor)) {
       return new Response(JSON.stringify({ error: 'Token inválido' }), { status: 401 });
     }
 
@@ -48,12 +61,23 @@ Deno.serve(async (req: Request) => {
       sub = data;
     }
     if (!sub && payment.customer) {
-      const { data } = await supabase
+      // Busca por lista (não .maybeSingle()) de propósito: no modo "cobrar do
+      // dono" várias lojas podem compartilhar o mesmo cliente Asaas, então mais
+      // de uma assinatura pode bater aqui. Ambíguo demais pra ativar uma loja
+      // específica — melhor não ativar nenhuma (fica pendente pra reconciliar
+      // manualmente) do que arriscar liberar acesso pra loja errada.
+      const { data: candidatas } = await supabase
         .from('assinaturas')
         .select('*')
-        .eq('asaas_customer_id', payment.customer)
-        .maybeSingle();
-      sub = data;
+        .eq('asaas_customer_id', payment.customer);
+      if (candidatas && candidatas.length === 1) {
+        sub = candidatas[0];
+      } else if (candidatas && candidatas.length > 1) {
+        console.error(
+          'Webhook Asaas: customer', payment.customer,
+          'bate com', candidatas.length, 'assinaturas diferentes — ambíguo, não ativando nenhuma. Evento:', evento,
+        );
+      }
     }
     if (!sub) {
       // Não é necessariamente um erro — pode ser evento de outra cobrança avulsa
