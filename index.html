@@ -1781,6 +1781,13 @@ async function carregarMinhasLojas(){
         });
       }
     }
+    // Segurança extra: garante que não sobrou nenhuma loja duplicada, não importa
+    // o motivo (troca de conta sem recarregar a página, dados de sessão anterior
+    // etc.) — mantém sempre a versão mais recente de cada id.
+    const vistos=new Map();
+    lojas.forEach(l=>vistos.set(l.id,l));
+    lojas.length=0;
+    lojas.push(...vistos.values());
     renderLojas();
     await carregarCategoriasConsolidado();
   }catch(e){}
