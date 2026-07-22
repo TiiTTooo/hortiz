@@ -1,0 +1,14 @@
+project_id = "ocexfnvbgaponmvinfbc"
+
+# asaas-webhook precisa ficar PÚBLICA: quem chama é o Asaas, não o app.
+# A segurança é feita dentro do próprio código (token no cabeçalho
+# "asaas-access-token"), não pelo JWT do Supabase. Sem essa linha, o
+# Supabase bloqueia a chamada do Asaas com 401 antes mesmo dela chegar
+# no código da function.
+[functions.asaas-webhook]
+verify_jwt = false
+
+# smart-service espera o JWT de login real do usuário do app (usa
+# supabase.auth.getUser() internamente) — mantém a verificação padrão.
+[functions.smart-service]
+verify_jwt = true

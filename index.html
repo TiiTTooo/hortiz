@@ -556,7 +556,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
         <!-- VIEW: POR CATEGORIA -->
         <div id="ceasa-view-categoria">
-          <div class="cat-btn-bar" style="display:flex;gap:6px;flex-wrap:wrap;" id="ceasaCatBtns"></div>
+          <div style="display:flex;gap:6px;margin-bottom:.5rem;">
+            <button class="cat-btn active" id="ceasaCatTodasBtn" onclick="switchCeasaCat('todas')" style="flex:1;font-size:15px;">📋 Todas</button>
+            <button class="btn-ghost" onclick="toggleCeasaCatMenu()" title="Mais categorias" style="flex-shrink:0;padding:0 14px;"><i class="ti ti-menu-2"></i></button>
+          </div>
+          <div class="cat-btn-bar" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:.75rem;" id="ceasaCatBtns"></div>
           <div id="listaPendentesCat"></div>
           <div id="listaNaoCompradosCat"></div>
         </div>
@@ -1474,12 +1478,12 @@ function showToast(msg){const t=el('toast');t.textContent=msg;t.classList.add('s
 function toggleTheme(){
   const theme=el('darkToggle').checked?'dark':'light';
   document.documentElement.dataset.theme=theme;
-  try{localStorage.setItem('ceasa_theme',theme);}catch(e){}
+  try{localStorage.setItem(chaveLS('ceasa_theme'),theme);}catch(e){}
   if(corDestaqueAtual)aplicarCorDestaque(corDestaqueAtual);
 }
 function loadTheme(){
   try{
-    const saved=localStorage.getItem('ceasa_theme');
+    const saved=localStorage.getItem(chaveLS('ceasa_theme'));
     if(saved){
       document.documentElement.dataset.theme=saved;
       const tog=el('darkToggle');
@@ -1710,6 +1714,7 @@ async function carregarPerfilEEntrar(userId){
     isAdmin: perfil.is_admin,
     cpf: perfil.cpf
   };
+  loadTheme(); // recarrega o tema já escopado por este usuário específico (não o do último que usou o aparelho)
   if(perfil.lojas){
     // garante que a loja do usuário está na lista local
     const idx = lojas.findIndex(l=>l.id===perfil.lojas.id);
@@ -2196,7 +2201,7 @@ function switchTab(tab){
   if(tab==='historico')renderHistoricoCompras();
 
   if(tab==='pedidos'){
-    switchView(localStorage.getItem('ceasa_pedido_view')||'lista');
+    switchView(localStorage.getItem(chaveLS('ceasa_pedido_view'))||'tabela');
     try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){showToast('Erro ao carregar pedidos: '+e.message);}
     const ehPedidos=currentUser&&currentUser.role==='pedidos';
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
@@ -2241,7 +2246,7 @@ function switchView(view){
   el('view-tabela').style.display=view==='tabela'?'':'none';
   atualizarStickySave();
   if(view==='tabela'){renderTabelaGrid();renderPedidoTabela();updateSalvarLabel();}
-  localStorage.setItem('ceasa_pedido_view',view);
+  localStorage.setItem(chaveLS('ceasa_pedido_view'),view);
 }
 
 /* ── DATE ── */
@@ -2538,43 +2543,21 @@ function switchCeasaView(view){
   if(view==='item'){renderPendentes();renderNaoComprados();}
 }
 
-let ceasaCatAtiva='fruta';
+let ceasaCatAtiva='todas';
+function toggleCeasaCatMenu(){
+  const bar=el('ceasaCatBtns');
+  bar.style.display = bar.style.display==='none' ? 'flex' : 'none';
+}
 function switchCeasaCat(cat){
   ceasaCatAtiva=cat;
   document.querySelectorAll('#ceasaCatBtns .cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
+  const btnTodas=el('ceasaCatTodasBtn');
+  if(btnTodas)btnTodas.classList.toggle('active',cat==='todas');
   renderPendentesCat();
 }
 
-function renderPendentesCat(){
-  const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='pendente');
-  const naoComp=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='nao_comprado');
-  const CATS=categorias.length?categorias:[{chave:'fruta',emoji:'🍊',nome:'Frutas'},{chave:'legume',emoji:'🥕',nome:'Legumes'},{chave:'verdura',emoji:'🥬',nome:'Verduras'}];
-
-  // Atualiza contadores nos botões
-  CATS.forEach(({chave})=>{
-    const count=itens.filter(p=>p.categoria===chave).length;
-    const badge=el('catCount-'+chave);
-    if(badge)badge.textContent=count>0?'('+count+')':'';
-  });
-
-  if(!itens.length&&!naoComp.length){
-    el('listaPendentesCat').innerHTML='<div class="empty"><i class="ti ti-checks"></i>Nenhum pendente nesse dia.</div>';
-    el('listaNaoCompradosCat').innerHTML='';
-    return;
-  }
-
-  // Mostra apenas a categoria ativa
-  const catAtivaInfo=CATS.find(c=>c.chave===ceasaCatAtiva)||catInfo(ceasaCatAtiva,CATS);
-  const grupo=itens.filter(p=>p.categoria===ceasaCatAtiva);
-
-  let html='';
-  if(!grupo.length){
-    html='<div class="empty" style="padding:2rem;text-align:center;"><i class="ti ti-checks" style="font-size:28px;display:block;margin-bottom:.5rem;"></i>Nenhum pendente em '+catAtivaInfo.nome+' hoje.</div>';
-  } else {
-    html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:1rem;">';
-    html+='<div style="padding:.625rem 1rem;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;"><span style="font-size:14px;font-weight:700;">'+catAtivaInfo.emoji+' '+catAtivaInfo.nome+'</span><span style="font-size:12px;color:var(--text2);">'+grupo.length+' item'+(grupo.length!==1?'ns':'')+'</span></div>';
-    grupo.forEach(p=>{
-      html+=`<div style="border-bottom:1px solid var(--border);padding:.75rem 1rem;">
+function itemPendenteCatHtml(p){
+  return `<div style="border-bottom:1px solid var(--border);padding:.75rem 1rem;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;">
           <div>
             <div style="font-size:14px;font-weight:700;">${p.produto}</div>
@@ -2611,8 +2594,52 @@ function renderPendentesCat(){
           <button class="btn-ghost" onclick="marcarNaoComprado(${p.id})" style="flex:1;font-size:13px;"><i class="ti ti-ban"></i> Não comprado</button>
         </div>
       </div>`;
+}
+function blocoCategoriaHtml(catInfo,grupo){
+  let html='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:1rem;">';
+  html+='<div style="padding:.625rem 1rem;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;"><span style="font-size:14px;font-weight:700;">'+catInfo.emoji+' '+catInfo.nome+'</span><span style="font-size:12px;color:var(--text2);">'+grupo.length+' item'+(grupo.length!==1?'ns':'')+'</span></div>';
+  grupo.forEach(p=>{html+=itemPendenteCatHtml(p);});
+  html+='</div>';
+  return html;
+}
+function renderPendentesCat(){
+  const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='pendente');
+  const naoComp=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='nao_comprado');
+  const CATS=categorias.length?categorias:[{chave:'fruta',emoji:'🍊',nome:'Frutas'},{chave:'legume',emoji:'🥕',nome:'Legumes'},{chave:'verdura',emoji:'🥬',nome:'Verduras'}];
+
+  // Atualiza contadores nos botões
+  CATS.forEach(({chave})=>{
+    const count=itens.filter(p=>p.categoria===chave).length;
+    const badge=el('catCount-'+chave);
+    if(badge)badge.textContent=count>0?'('+count+')':'';
+  });
+
+  if(!itens.length&&!naoComp.length){
+    el('listaPendentesCat').innerHTML='<div class="empty"><i class="ti ti-checks"></i>Nenhum pendente nesse dia.</div>';
+    el('listaNaoCompradosCat').innerHTML='';
+    return;
+  }
+
+  let html='';
+  if(ceasaCatAtiva==='todas'){
+    // Mostra todas as categorias juntas, uma abaixo da outra, cada uma só com seus itens
+    let algumaComItem=false;
+    CATS.forEach(c=>{
+      const grupo=itens.filter(p=>p.categoria===c.chave);
+      if(grupo.length){ algumaComItem=true; html+=blocoCategoriaHtml(c,grupo); }
     });
-    html+='</div>';
+    if(!algumaComItem){
+      html='<div class="empty" style="padding:2rem;text-align:center;"><i class="ti ti-checks" style="font-size:28px;display:block;margin-bottom:.5rem;"></i>Nenhum pendente hoje.</div>';
+    }
+  } else {
+    // Mostra apenas a categoria ativa
+    const catAtivaInfo=CATS.find(c=>c.chave===ceasaCatAtiva)||catInfo(ceasaCatAtiva,CATS);
+    const grupo=itens.filter(p=>p.categoria===ceasaCatAtiva);
+    if(!grupo.length){
+      html='<div class="empty" style="padding:2rem;text-align:center;"><i class="ti ti-checks" style="font-size:28px;display:block;margin-bottom:.5rem;"></i>Nenhum pendente em '+catAtivaInfo.nome+' hoje.</div>';
+    } else {
+      html=blocoCategoriaHtml(catAtivaInfo,grupo);
+    }
   }
 
   el('listaPendentesCat').innerHTML=html;
@@ -2621,7 +2648,7 @@ function renderPendentesCat(){
   let htmlNao='';
   if(naoComp.length){
     htmlNao=`<div class="sh"><i class="ti ti-ban"></i> Não comprados</div>`;
-    CATS.forEach(({k,emoji})=>{
+    CATS.forEach(({chave:k,emoji})=>{
       const grupo=naoComp.filter(p=>p.categoria===k);
       if(!grupo.length)return;
       htmlNao+=grupo.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;">
