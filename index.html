@@ -2724,8 +2724,8 @@ function renderNaoComprados(){
   el('listaNaoComprados').innerHTML=itens.length?`<div class="sh"><i class="ti ti-ban"></i> Não comprados</div>`
     +itens.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;">${p.produto} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span><button class="btn-ghost btn-sm" onclick="reabrirPendente(${p.id})">Reabrir</button></div>`).join(''):'';
 }
-function marcarNaoComprado(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='nao_comprado';syncPedidoUpdate(p);renderPendentes();renderNaoComprados();renderPedido();}
-function reabrirPendente(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='pendente';renderPendentes();renderNaoComprados();renderPedido();}
+function marcarNaoComprado(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='nao_comprado';syncPedidoUpdate(p);renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();}
+function reabrirPendente(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='pendente';renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();}
 function confirmPendente(id){
   const p=itensPedido.find(i=>i.id===id);if(!p)return;
   const suf=ceasaViewAtual==='categoria'?'-cat-':'-';
@@ -2739,7 +2739,7 @@ function confirmPendente(id){
   compras.push(novaCompra);
   syncCompraInsert(novaCompra, p.id);
   priceHistory.push({produto:p.produto,categoria:p.categoria,data:currentDate,valor:val,custoUnitario:custoUn,unidPorCaixa:p.unidPorCaixa||null,tipo:p.tipo||'caixa',fornecedor:forn,lojaId:currentLojaId});
-  renderPendentes();renderPedido();renderCompras();renderFornecedores();showToast(`${p.produto} confirmado!`);
+  renderPendentes();renderPendentesCat();renderPedido();renderCompras();renderFornecedores();showToast(`${p.produto} confirmado!`);
 }
 function addAvulso(){
   const qtd=parseFloat((el('qtdAvulso').value||'').replace(',','.'))||0;const val=parseFloat((el('valorAvulso').value||'').replace(',','.'))||0;
@@ -5113,12 +5113,30 @@ async function confirmarCompraComprador(idx){
       const nomeLoja=loja?loja.nome:'Loja '+origem.lojaId;
       const {error:updError}=await db.from('itens_pedido').update({status:'comprado'}).eq('id',origem.itemId);
       if(updError){falhas.push(nomeLoja+': '+updError.message);continue;}
-      const {error:insError}=await db.from('compras').insert({
+      const {data:insData,error:insError}=await db.from('compras').insert({
         loja_id:origem.lojaId,item_pedido_id:origem.itemId,data:currentDate,
         produto:linha.produto,categoria:linha.categoria,qtd:qtdDestaLoja,
         valor_unit:valorUnit,fornecedor,pagamento
-      });
-      if(insError)falhas.push(nomeLoja+': '+insError.message);
+      }).select().single();
+      if(insError){falhas.push(nomeLoja+': '+insError.message);continue;}
+      // Espelha a mudança no estado local em memória — sem isso, a tela "por
+      // loja" (item por item / por categoria) ficava mostrando o pedido como
+      // pendente até um recarregamento manual, mesmo já confirmado no banco
+      // pelo consolidado. Só tem efeito pra loja(s) já carregadas localmente
+      // (normalmente a loja atualmente selecionada); as demais nem precisam,
+      // porque não têm tela local aberta mostrando esse item.
+      const itemLocal=itensPedido.find(p=>p.id===origem.itemId);
+      if(itemLocal){
+        itemLocal.status='comprado';
+        const custoUn=(itemLocal.unidPorCaixa&&itemLocal.tipo==='caixa')?valorUnit/itemLocal.unidPorCaixa:valorUnit;
+        compras.push({
+          id:insData?.id??nextCompraId++,produto:linha.produto,categoria:linha.categoria,
+          qtd:qtdDestaLoja,valorUnit,custoUnitario:custoUn,tipo:itemLocal.tipo||'caixa',
+          unidPorCaixa:itemLocal.unidPorCaixa||null,fornecedor,pagamento,planejado:true,
+          lojaId:origem.lojaId,data:currentDate,
+        });
+        priceHistory.push({produto:linha.produto,categoria:linha.categoria,data:currentDate,valor:valorUnit,custoUnitario:custoUn,unidPorCaixa:itemLocal.unidPorCaixa||null,tipo:itemLocal.tipo||'caixa',fornecedor,lojaId:origem.lojaId});
+      }
     }
     if(falhas.length){
       showToast('Atenção: falhou pra '+falhas.length+' loja(s). '+falhas.join(' | '));
@@ -5126,6 +5144,9 @@ async function confirmarCompraComprador(idx){
       showToast('Compra confirmada e distribuída pra '+linha.origens.length+' loja(s)!');
     }
     renderComprasComprador();
+    // Atualiza também a visão "por loja", caso o usuário volte pra ela sem
+    // recarregar a página.
+    renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();renderCompras();renderFornecedores();
   }catch(e){showToast('Erro: '+e.message);}
 }
 async function renderComprasCompradorFeitas(){
