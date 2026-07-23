@@ -3893,8 +3893,7 @@ function getWeekBounds(weekIdx,refDate){
 function calcRelPorProduto(de,ate){
   const my=compras.filter(c=>c.lojaId===currentLojaId);
   const rows=my.filter(c=>{
-    const h=priceHistory.find(x=>x.lojaId===currentLojaId&&x.produto===c.produto&&x.fornecedor===c.fornecedor);
-    const dt=h?h.data:currentDate;
+    const dt=c.data||currentDate;
     return dt>=de&&dt<=ate;
   });
   const porProduto={};
@@ -4016,15 +4015,9 @@ function exportarRelatorioPdf(modo){
 }
 function calcRelTotals(de,ate){
   const my=compras.filter(c=>c.lojaId===currentLojaId);
-  // usa priceHistory para data real
-  const byDate={};
-  priceHistory.filter(h=>h.lojaId===currentLojaId).forEach(h=>{
-    if(!byDate[h.produto+'|'+h.data])byDate[h.produto+'|'+h.data]={data:h.data,categoria:h.categoria,valor:h.valor,qtd:1};
-  });
   // compras confirmadas (mais precisas com qtd real)
   let rows=my.filter(c=>{
-    const h=priceHistory.find(x=>x.lojaId===currentLojaId&&x.produto===c.produto&&x.fornecedor===c.fornecedor);
-    const dt=h?h.data:currentDate;
+    const dt=c.data||currentDate;
     return dt>=de&&dt<=ate;
   });
   const tot={};
