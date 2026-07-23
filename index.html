@@ -2023,20 +2023,31 @@ let homeRedeBarInst=null;
 async function renderResumoRede(){
   const wrap=el('homeResumoRedeWrap');
   if(!wrap)return;
-  const souDonoMultiLoja=currentUser&&currentUser.role==='owner'&&lojas.length>1;
-  if(!souDonoMultiLoja){wrap.style.display='none';return;}
-  wrap.style.display='';
+  wrap.style.display='none';
+  if(!currentUser)return;
   try{
-    const idsLojas=lojas.map(l=>l.id);
+    // Rede de verdade = lojas onde EU (currentUser) sou owner de fato, via
+    // loja_membros. Não pode usar o array `lojas` direto: pra admin master
+    // esse array vem inflado com TODAS as lojas do sistema (pra ele poder
+    // trocar pra qualquer uma), o que misturaria lojas de outros donos aqui.
+    // Também não filtra por currentUser.role sozinho, porque `lojas` pode
+    // trazer junto lojas onde essa pessoa é só comprador/gerente.
+    const {data:membrosOwner,error:errM}=await db.from('loja_membros').select('loja_id').eq('user_id',currentUser.id).eq('role','owner');
+    if(errM)throw errM;
+    const idsMinhasLojas=[...new Set((membrosOwner||[]).map(m=>m.loja_id))];
+    if(idsMinhasLojas.length<2)return; // não é dono de rede — comporta igual loja avulsa, sem o card
+    const minhasLojas=lojas.filter(l=>idsMinhasLojas.includes(l.id));
+    wrap.style.display='';
+
     const ultimoDiaMes=new Date(homeResumoAno,homeResumoMes+1,0).getDate();
     const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
     const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
-    const {data,error}=await db.from('compras').select('loja_id,qtd,valor_unit').in('loja_id',idsLojas).gte('data',de).lte('data',ate);
+    const {data,error}=await db.from('compras').select('loja_id,qtd,valor_unit').in('loja_id',idsMinhasLojas).gte('data',de).lte('data',ate);
     if(error)throw error;
     const linhas=(data||[]).map(c=>({lojaId:c.loja_id,total:parseFloat(c.qtd)*parseFloat(c.valor_unit)}));
 
     // por loja — ordenado do que mais gastou pro que menos gastou (maior no topo)
-    const porLoja=lojas.map(l=>({loja:l,total:linhas.filter(x=>x.lojaId===l.id).reduce((a,x)=>a+x.total,0)}))
+    const porLoja=minhasLojas.map(l=>({loja:l,total:linhas.filter(x=>x.lojaId===l.id).reduce((a,x)=>a+x.total,0)}))
       .sort((a,b)=>b.total-a.total);
     const totalGeral=porLoja.reduce((a,x)=>a+x.total,0);
     el('homeRedeTotalLabel').textContent='Total da rede: '+fmt(totalGeral);
@@ -2046,6 +2057,13 @@ async function renderResumoRede(){
 
     const corBase=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#3ecf6e';
     if(homeRedeBarInst)homeRedeBarInst.destroy();
+    // Clique navega pra loja tanto pela barra quanto pelo nome no eixo Y:
+    // mode 'y' + intersect:false pega qualquer clique na altura daquela
+    // linha, não só em cima do retângulo da barra.
+    const acharLojaDoClique=evt=>{
+      const els=homeRedeBarInst.getElementsAtEventForMode(evt,'y',{intersect:false},true);
+      return els.length?porLoja[els[0].index].loja:null;
+    };
     homeRedeBarInst=new Chart(el('homeRedeBar'),{
       type:'bar',
       data:{
@@ -2055,12 +2073,8 @@ async function renderResumoRede(){
       options:{
         indexAxis:'y',
         responsive:true,maintainAspectRatio:false,
-        onClick:(evt,elements)=>{
-          if(!elements.length)return;
-          const loja=porLoja[elements[0].index].loja;
-          selectLoja(loja.id);
-        },
-        onHover:(evt,elements)=>{evt.native.target.style.cursor=elements.length?'pointer':'default';},
+        onClick:evt=>{const loja=acharLojaDoClique(evt);if(loja)selectLoja(loja.id);},
+        onHover:(evt)=>{evt.native.target.style.cursor=acharLojaDoClique(evt)?'pointer':'default';},
         scales:{
           x:{beginAtZero:true,ticks:{callback:v=>fmt(v)},grid:{color:'var(--border)'}},
           y:{grid:{display:false},ticks:{font:{size:12,weight:'600'}}}
