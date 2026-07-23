@@ -2025,24 +2025,42 @@ async function renderResumoRede(){
   if(!wrap)return;
   wrap.style.display='none';
   if(!currentUser)return;
+  if(!(currentUser.role==='owner'||currentUser.isAdmin))return; // comprador/gerente não vê isso, igual outros painéis de dono
   try{
-    // Rede de verdade = lojas onde EU (currentUser) sou owner de fato, via
-    // loja_membros. Não pode usar o array `lojas` direto: pra admin master
-    // esse array vem inflado com TODAS as lojas do sistema (pra ele poder
-    // trocar pra qualquer uma), o que misturaria lojas de outros donos aqui.
-    // Também não filtra por currentUser.role sozinho, porque `lojas` pode
-    // trazer junto lojas onde essa pessoa é só comprador/gerente.
-    const {data:membrosOwner,error:errM}=await db.from('loja_membros').select('loja_id').eq('user_id',currentUser.id).eq('role','owner');
+    // Rede de verdade = todas as lojas onde o(s) DONO(S) DA LOJA ATUAL
+    // (currentLojaId) também é owner — não as lojas de currentUser. Isso é
+    // o que faz funcionar pros dois casos: pro dono de verdade (ele mesmo é
+    // o dono da loja atual, então sempre enxerga a rede dele completa, não
+    // importa em qual das próprias lojas esteja) e pro admin master (que
+    // não é dono de nenhuma loja via loja_membros, mas ao entrar numa loja
+    // de suporte deve ver a rede DAQUELE dono — só enquanto estiver numa
+    // loja que pertence a uma rede; loja avulsa continua sem o card).
+    const {data:donosLojaAtual,error:errO}=await db.from('loja_membros').select('user_id').eq('loja_id',currentLojaId).eq('role','owner');
+    if(errO)throw errO;
+    const idsDonos=[...new Set((donosLojaAtual||[]).map(m=>m.user_id))];
+    if(!idsDonos.length)return; // loja sem dono cadastrado
+
+    const {data:membrosRede,error:errM}=await db.from('loja_membros').select('loja_id').in('user_id',idsDonos).eq('role','owner');
     if(errM)throw errM;
-    const idsMinhasLojas=[...new Set((membrosOwner||[]).map(m=>m.loja_id))];
-    if(idsMinhasLojas.length<2)return; // não é dono de rede — comporta igual loja avulsa, sem o card
-    const minhasLojas=lojas.filter(l=>idsMinhasLojas.includes(l.id));
+    const idsRede=[...new Set((membrosRede||[]).map(m=>m.loja_id))];
+    if(idsRede.length<2)return; // não é uma rede — comporta igual loja avulsa, sem o card
+
+    // Pra montar os nomes das lojas da rede, usa `lojas` quando já tiver (dono
+    // de verdade só tem as próprias ali) e completa com uma busca direto no
+    // banco pro que faltar (caso do admin vendo a rede de outra pessoa).
+    const idsFaltando=idsRede.filter(id=>!lojas.some(l=>l.id===id));
+    let minhasLojas=lojas.filter(l=>idsRede.includes(l.id));
+    if(idsFaltando.length){
+      const {data:lojasFaltando,error:errL}=await db.from('lojas').select('id,nome').in('id',idsFaltando);
+      if(errL)throw errL;
+      minhasLojas=minhasLojas.concat((lojasFaltando||[]).map(l=>({id:l.id,nome:l.nome})));
+    }
     wrap.style.display='';
 
     const ultimoDiaMes=new Date(homeResumoAno,homeResumoMes+1,0).getDate();
     const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
     const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
-    const {data,error}=await db.from('compras').select('loja_id,qtd,valor_unit').in('loja_id',idsMinhasLojas).gte('data',de).lte('data',ate);
+    const {data,error}=await db.from('compras').select('loja_id,qtd,valor_unit').in('loja_id',idsRede).gte('data',de).lte('data',ate);
     if(error)throw error;
     const linhas=(data||[]).map(c=>({lojaId:c.loja_id,total:parseFloat(c.qtd)*parseFloat(c.valor_unit)}));
 
