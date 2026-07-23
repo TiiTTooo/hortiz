@@ -435,6 +435,16 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div style="width:220px;height:220px;flex-shrink:0;position:relative;"><canvas id="homePie"></canvas></div>
           <div class="home-pie-legend" id="homePieLegend"></div>
         </div>
+
+        <!-- Resumo da rede — só aparece pra dono com mais de uma loja -->
+        <div id="homeResumoRedeWrap" style="display:none;margin-top:1.5rem;">
+          <div class="home-section"><i class="ti ti-building-store"></i> Resumo da rede (todas as suas lojas)</div>
+          <div class="home-pie-wrap">
+            <div style="width:220px;height:220px;flex-shrink:0;position:relative;"><canvas id="homeRedePie"></canvas></div>
+            <div class="home-pie-legend" id="homeRedePieLegend"></div>
+          </div>
+          <div id="homeRedePorLoja" style="margin-top:.875rem;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
       </section>
 
       <!-- PEDIDOS -->
@@ -1999,6 +2009,68 @@ function renderHome(){
       }
     }
   });
+  renderResumoRede();
+}
+
+/* ── RESUMO DA REDE (dono com mais de uma loja) ──
+   Independente da visão "consolidado" de Compras (que é sobre o papel
+   comprador e pedidos vinculados de um dia específico) — aqui é uma foto
+   geral do mês, por categoria e por loja, pra quem é dono de várias lojas.
+   `compras` (variável global) só tem os dados da loja atual — por isso
+   busca direto no banco pras outras lojas em vez de reaproveitar o array. */
+let homeRedePieInst=null;
+async function renderResumoRede(){
+  const wrap=el('homeResumoRedeWrap');
+  if(!wrap)return;
+  const souDonoMultiLoja=currentUser&&currentUser.role==='owner'&&lojas.length>1;
+  if(!souDonoMultiLoja){wrap.style.display='none';return;}
+  wrap.style.display='';
+  try{
+    const idsLojas=lojas.map(l=>l.id);
+    const ultimoDiaMes=new Date(homeResumoAno,homeResumoMes+1,0).getDate();
+    const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
+    const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
+    const {data,error}=await db.from('compras').select('loja_id,categoria,qtd,valor_unit').in('loja_id',idsLojas).gte('data',de).lte('data',ate);
+    if(error)throw error;
+    const linhas=(data||[]).map(c=>({lojaId:c.loja_id,categoria:c.categoria,total:parseFloat(c.qtd)*parseFloat(c.valor_unit)}));
+
+    // por categoria (mesmas categorias/cores do gráfico da loja individual)
+    const listaCat=listaCatComFallback();
+    const totaisCat=listaCat.map(c=>linhas.filter(l=>l.categoria===c.chave).reduce((a,l)=>a+l.total,0));
+    const cores=listaCat.map(c=>corCat(c.chave));
+    const totalGeral=totaisCat.reduce((a,v)=>a+v,0);
+    el('homeRedePieLegend').innerHTML=listaCat.map((c,i)=>`<div class="legend-row"><div class="legend-dot" style="background:${cores[i]}"></div><span>${c.nome}</span><span class="legend-val">${fmt(totaisCat[i])}</span></div>`).join('')
+      +`<div style="border-top:1px solid var(--border);padding-top:.375rem;margin-top:.25rem;" class="legend-row"><strong>Total da rede</strong><span class="legend-val" style="color:var(--accent);">${fmt(totalGeral)}</span></div>`;
+    if(homeRedePieInst)homeRedePieInst.destroy();
+    homeRedePieInst=new Chart(el('homeRedePie'),{
+      type:'doughnut',
+      data:{labels:listaCat.map(c=>c.nome),datasets:[{data:totaisCat,backgroundColor:cores,borderWidth:2,borderColor:'var(--bg)',hoverOffset:4}]},
+      options:{responsive:true,maintainAspectRatio:true,cutout:'58%',
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.parsed)}},
+          datalabels:{
+            color:'#fff',anchor:'end',align:'end',offset:4,font:{size:9,weight:'bold'},
+            formatter:(val,ctx)=>{const pct=Math.round(val/totalGeral*100);return pct>10?pct+'%':'';},
+            display:ctx=>ctx.dataset.data[ctx.dataIndex]>0
+          }
+        }
+      }
+    });
+
+    // por loja — ordenado do que mais gastou pro que menos gastou
+    const porLoja=lojas.map(l=>({loja:l,total:linhas.filter(x=>x.lojaId===l.id).reduce((a,x)=>a+x.total,0)}))
+      .sort((a,b)=>b.total-a.total);
+    el('homeRedePorLoja').innerHTML=porLoja.map(({loja,total})=>`
+      <div class="data-card" style="cursor:pointer;" onclick="selectLoja(${loja.id})">
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:13px;font-weight:600;">${loja.nome}${loja.id===currentLojaId?' <span style=\"color:var(--accent);font-weight:400;\">(atual)</span>':''}</p>
+        </div>
+        <p style="font-size:13px;font-weight:700;">${fmt(total)}</p>
+      </div>`).join('');
+  }catch(e){
+    wrap.style.display='none';
+  }
 }
 
 /* ── PREÇO DINÂMICO NA ABA ASSINATURA ── */
