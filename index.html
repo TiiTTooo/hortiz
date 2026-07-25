@@ -535,14 +535,6 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           </div>
         </div>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.875rem;">
-          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(0)">Semana 1</button>
-          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(1)">Semana 2</button>
-          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(2)">Semana 3</button>
-          <button class="btn-ghost btn-sm" onclick="buscarSemanaCompras(3)">Semana 4</button>
-        </div>
-        <div id="resumoSemanaCompras" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.875rem 1rem;margin-bottom:1rem;"></div>
-
         <!-- VISÃO DO COMPRADOR (consolidada entre lojas vinculadas) -->
         <div id="compras-comprador-view" style="display:none;">
           <div id="voltarComprasNormalWrap" style="display:none;margin-bottom:.625rem;">
@@ -2435,22 +2427,6 @@ function navegarDiaCompra(delta){
     el('pedidoData').value=anteriores[anteriores.length-1];
   }
   onDateChange();
-}
-function buscarSemanaCompras(idx){
-  const {start,end,label}=getWeekBounds(idx,currentDate);
-  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data>=start&&c.data<=end);
-  const tot={};
-  my.forEach(c=>{tot[c.categoria]=(tot[c.categoria]||0)+c.qtd*c.valorUnit;});
-  const total=Object.values(tot).reduce((a,v)=>a+v,0);
-  const cont=el('resumoSemanaCompras');
-  cont.style.display='block';
-  cont.innerHTML=`
-    <p style="font-size:13px;font-weight:700;margin-bottom:.625rem;">📅 ${label}</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:.5rem;font-size:13px;">
-      ${listaCatComFallback().map(c=>`<div>${c.emoji} ${c.nome}<br><strong>${fmt(tot[c.chave]||0)}</strong></div>`).join('')}
-      <div style="color:var(--accent);">Total<br><strong>${fmt(total)}</strong></div>
-    </div>
-    <p style="font-size:11px;color:var(--text2);margin-top:.5rem;">${my.length} compra(s) registrada(s) nesse período.</p>`;
 }
 function renderHistorico(){
   const my=itensPedido.filter(i=>i.lojaId===currentLojaId);
