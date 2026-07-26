@@ -5248,36 +5248,13 @@ async function exportarPedidoConsolidadoTotalPdf(){
     doc.setFontSize(9);
     const resumoTxt=Object.keys(contagem).map(c=>labelCat(c)+': '+contagem[c]).join('    ·    ');
     doc.text(resumoTxt,14,34,{maxWidth:180});
-    // Duas colunas de produto lado a lado (mesmas informações repetidas: categoria,
-    // produto, qtd total, lojas), pra caber muito mais linha por página.
-    const metade=Math.ceil(linhas.length/2);
-    const colEsq=linhas.slice(0,metade);
-    const colDir=linhas.slice(metade);
-    const fmtLinha=l=>[labelCat(l.categoria),l.produto,String(l.total)+(l.tipo==='caixa'?' cx':' un'),String(l.lojasSet.size)];
-    const body=colEsq.map((l,i)=>{
-      const r=colDir[i];
-      return [...fmtLinha(l),'',...(r?fmtLinha(r):['','','',''])];
-    });
+    const body=linhas.map(l=>[labelCat(l.categoria),l.produto,String(l.total)+(l.tipo==='caixa'?' cx':' un'),String(l.lojasSet.size)]);
     doc.autoTable({
       startY:42,
-      head:[['Categoria','Produto','Qtd total','Lojas','','Categoria','Produto','Qtd total','Lojas']],
+      head:[['Categoria','Produto','Qtd total','Lojas']],
       body,
-      styles:{fontSize:8,cellPadding:3},
-      headStyles:{fillColor:[96,165,250]},
-      margin:{left:14,right:14},
-      columnStyles:{
-        0:{cellWidth:20},1:{cellWidth:24},2:{cellWidth:17},3:{cellWidth:15},
-        4:{cellWidth:4,fillColor:255},
-        5:{cellWidth:20},6:{cellWidth:24},7:{cellWidth:17},8:{cellWidth:15}
-      },
-      didDrawCell:(data)=>{
-        if(data.column.index===4){
-          doc.setDrawColor(190);
-          doc.setLineWidth(0.3);
-          const x=data.cell.x+data.cell.width/2;
-          doc.line(x,data.cell.y,x,data.cell.y+data.cell.height);
-        }
-      }
+      styles:{fontSize:9,cellPadding:4},
+      headStyles:{fillColor:[96,165,250]}
     });
     doc.save(`pedido-consolidado-total-${currentDate}.pdf`);
     showToast('PDF consolidado exportado!');
