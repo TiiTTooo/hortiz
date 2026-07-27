@@ -1440,7 +1440,7 @@ function renderCatBtnBar(containerId,lista,catAtiva,fnName,opts){
   const cont=el(containerId);if(!cont)return;
   let html='';
   if(opts.incluirTodas)html+=`<button class="cat-btn${catAtiva===''?' active':''}" data-cat="" onclick="${fnName}('')" style="${opts.btnStyle||''}">Todas</button>`;
-  html+=lista.map(c=>`<button class="cat-btn${catAtiva===c.chave?' active':''}" data-cat="${c.chave}" onclick="${fnName}('${c.chave}')" style="${opts.btnStyle||''}">${c.emoji} ${c.nome}${opts.contador?` <span id="catCount-${c.chave}" style="font-size:11px;opacity:.7;"></span>`:''}</button>`).join('');
+  html+=lista.map(c=>`<button class="cat-btn${catAtiva===c.chave?' active':''}" data-cat="${c.chave}" onclick="${fnName}('${c.chave}')" style="${opts.btnStyle||''}">${c.emoji} ${esc(c.nome)}${opts.contador?` <span id="catCount-${c.chave}" style="font-size:11px;opacity:.7;"></span>`:''}</button>`).join('');
   cont.innerHTML=html;
 }
 function listaCatComFallback(){
@@ -1458,7 +1458,7 @@ function renderTodosSeletoresCategoria(){
 }
 function renderSeletoresCategoriaSelect(){
   const lista=listaCatComFallback();
-  const opts=lista.map(c=>`<option value="${c.chave}">${c.emoji} ${c.nome}</option>`).join('');
+  const opts=lista.map(c=>`<option value="${c.chave}">${c.emoji} ${esc(c.nome)}</option>`).join('');
   const optsComTodas=`<option value="">Todas</option>`+opts;
   const optsComTodasCategorias=`<option value="">Todas categorias</option>`+opts;
   ['catPlan','catAvulso','novoProdutoCategoria'].forEach(id=>{
@@ -1509,6 +1509,23 @@ function el(id){return document.getElementById(id);}
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function formatBR(iso){const[y,m,d]=iso.split('-');return`${d}/${m}/${y}`;}
 function fmt(v){return v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
+/* escapa texto vindo do usuário/banco antes de interpolar em innerHTML — evita XSS armazenado
+   (ex: nome de loja, fornecedor, produto, categoria, convite) */
+function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+/* escapa pra uso dentro de string JS de aspas simples num onclick=".." -- SEMPRE compor com esc() por fora: esc(escJs(valor)) */
+function escJs(s){if(s===null||s===undefined)return'';return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+/* traduz erros comuns do Supabase/Postgrest pra mensagem amigável; cai no texto original (prefixo+mensagem crua)
+   quando não reconhece o erro, então nada que já funcionava hoje deixa de funcionar */
+function traduzErro(err,prefixoOriginal){
+  const cod=err&&err.code;
+  const msg=(err&&err.message)||'';
+  if(cod==='23505')return'Já existe um registro com esses dados — confere se não é duplicado.';
+  if(cod==='23503')return'Não dá pra concluir: esse registro está vinculado a outro (ex: já usado em algum pedido/compra).';
+  if(cod==='23502')return'Faltou preencher um campo obrigatório.';
+  if(cod==='42501'||cod==='PGRST301'||cod==='PGRST116')return'Você não tem permissão pra fazer essa ação nessa loja.';
+  if(msg==='Failed to fetch'||(err instanceof TypeError))return'Sem conexão com o servidor — verifica sua internet e tenta de novo.';
+  return(prefixoOriginal!==undefined?prefixoOriginal:'Erro: ')+msg;
+}
 function badge(cls,txt){return`<span class="badge ${cls}">${txt}</span>`;}
 function statusBadge(s){return s==='comprado'?badge('badge-comprado','✓ Comprado'):s==='nao_comprado'?badge('badge-nao','✗ Não comprado'):badge('badge-pendente','• Pendente');}
 function showToast(msg){const t=el('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
@@ -1602,10 +1619,10 @@ async function salvarMeuCpf(){
   const cpf=el('meuCpfInput').value.trim();
   try{
     const {error}=await db.from('perfis').update({cpf:cpf||null}).eq('id',currentUser.id);
-    if(error){showToast('Erro ao salvar CPF: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao salvar CPF: '));return;}
     currentUser.cpf=cpf;
     showToast('CPF salvo!');
-  }catch(e){showToast('Erro ao salvar CPF: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao salvar CPF: '));}
 }
 function closeSettings(){el('settingsModal').classList.remove('open');}
 
@@ -1624,11 +1641,11 @@ async function doForgotPassword(){
   if(!email){msgEl.style.color='var(--red)';msgEl.textContent='Digite seu e-mail.';msgEl.style.display='block';return;}
   try{
     const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});
-    if(error){msgEl.style.color='var(--red)';msgEl.textContent='Erro: '+error.message;msgEl.style.display='block';return;}
+    if(error){msgEl.style.color='var(--red)';msgEl.textContent=traduzErro(error,'Erro: ');msgEl.style.display='block';return;}
     msgEl.style.color='var(--accent)';
     msgEl.textContent='Link enviado! Confere sua caixa de entrada (e o spam) e clica no link pra criar uma senha nova.';
     msgEl.style.display='block';
-  }catch(e){msgEl.style.color='var(--red)';msgEl.textContent='Erro: '+e.message;msgEl.style.display='block';}
+  }catch(e){msgEl.style.color='var(--red)';msgEl.textContent=traduzErro(e,'Erro: ');msgEl.style.display='block';}
 }
 async function doResetPassword(){
   const p1=el('resetPass1').value;const p2=el('resetPass2').value;
@@ -1637,12 +1654,12 @@ async function doResetPassword(){
   if(p1!==p2){el('resetErro').textContent='As senhas digitadas são diferentes.';el('resetErro').style.display='block';return;}
   try{
     const {error}=await db.auth.updateUser({password:p1});
-    if(error){el('resetErro').textContent='Erro: '+error.message;el('resetErro').style.display='block';return;}
+    if(error){el('resetErro').textContent=traduzErro(error,'Erro: ');el('resetErro').style.display='block';return;}
     showToast('Senha alterada com sucesso!');
     const {data:{session}}=await db.auth.getSession();
     if(session)await carregarPerfilEEntrar(session.user.id);
     else switchLoginTab('login');
-  }catch(e){el('resetErro').textContent='Erro: '+e.message;el('resetErro').style.display='block';}
+  }catch(e){el('resetErro').textContent=traduzErro(e,'Erro: ');el('resetErro').style.display='block';}
 }
 function mostrarErroLogin(msg){
   const e=el('loginErro');e.textContent=msg;e.style.display='block';
@@ -1717,14 +1734,14 @@ async function doRegister(){
     roleFinal=conviteDetectado.role||'manager';
     const {error:conviteErr}=await db.from('convites_usuario').update({usado:true}).eq('id',conviteDetectado.id);
     if(conviteErr){
-      mostrarErroRegistro('Erro ao confirmar o convite: '+conviteErr.message+'. Sua conta de login foi criada, mas o perfil não — fale com quem te convidou.');
+      mostrarErroRegistro(traduzErro(conviteErr,'Erro ao confirmar o convite: ')+'. Sua conta de login foi criada, mas o perfil não — fale com quem te convidou.');
       return;
     }
   } else {
     const { data: lojaData, error: lojaError } = await db.from('lojas').insert({
       nome: lojaNome, tel: telefone, cnpj: cnpj, endereco: endereco, cidade: cidade
     }).select().single();
-    if(lojaError){ mostrarErroRegistro('Erro ao criar loja: '+lojaError.message); return; }
+    if(lojaError){ mostrarErroRegistro(traduzErro(lojaError,'Erro ao criar loja: ')); return; }
     lojaIdFinal=lojaData.id;
     roleFinal='owner';
   }
@@ -1732,12 +1749,12 @@ async function doRegister(){
   const { error: perfilError } = await db.from('perfis').insert({
     id: userId, nome, email, role: roleFinal, loja_id: lojaIdFinal, is_admin: false
   });
-  if(perfilError){ mostrarErroRegistro('Erro ao criar perfil: '+perfilError.message); return; }
+  if(perfilError){ mostrarErroRegistro(traduzErro(perfilError,'Erro ao criar perfil: ')); return; }
 
   if(roleFinal==='comprador'){
     try{
       const {error:membroError}=await db.from('loja_membros').insert({user_id:userId,loja_id:lojaIdFinal,role:'comprador'});
-      if(membroError){mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você como comprador dessa loja: '+membroError.message+'. Fale com quem te convidou.');return;}
+      if(membroError){mostrarErroRegistro(traduzErro(membroError,'Conta criada, mas houve um erro ao vincular você como comprador dessa loja: ')+'. Fale com quem te convidou.');return;}
     }catch(e){
       mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você como comprador dessa loja. Fale com quem te convidou.');
       return;
@@ -1917,7 +1934,7 @@ function renderStoreModalList(){
         <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           ${l.logo?`<img src="${l.logo}" style="width:100%;height:100%;object-fit:cover;">`:'<i class="ti ti-building-store" style="font-size:17px;color:var(--text3);"></i>'}
         </div>
-        <div><p style="font-size:14px;font-weight:600;">${l.nome}</p><p style="font-size:12px;color:var(--text2);">${l.cidade||''}</p></div>
+        <div><p style="font-size:14px;font-weight:600;">${esc(l.nome)}</p><p style="font-size:12px;color:var(--text2);">${l.cidade||''}</p></div>
       </div>
       ${l.id===currentLojaId?'<i class="ti ti-check" style="color:var(--accent);font-size:18px;"></i>':''}
     </div>`;
@@ -1930,8 +1947,8 @@ async function selectLoja(id){
   showToast('Trocando de loja…');
   try{
     const {error}=await db.from('perfis').update({loja_id:id}).eq('id',currentUser.id);
-    if(error){showToast('Erro ao trocar de loja: '+error.message);return;}
-  }catch(e){showToast('Erro ao trocar de loja: '+e.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao trocar de loja: '));return;}
+  }catch(e){showToast(traduzErro(e,'Erro ao trocar de loja: '));return;}
   currentLojaId=id;
   closeStoreModal();
   await carregarDadosDaLoja();
@@ -2015,7 +2032,7 @@ function renderHome(){
   const totais=listaCat.map(c=>myCompras.filter(x=>x.categoria===c.chave).reduce((a,x)=>a+x.qtd*x.valorUnit,0));
   const cores=listaCat.map(c=>corCat(c.chave));
   const total=totais.reduce((a,v)=>a+v,0);
-  el('homePieLegend').innerHTML=listaCat.map((c,i)=>`<div class="legend-row"><div class="legend-dot" style="background:${cores[i]}"></div><span>${c.nome}</span><span class="legend-val">${fmt(totais[i])}</span></div>`).join('')
+  el('homePieLegend').innerHTML=listaCat.map((c,i)=>`<div class="legend-row"><div class="legend-dot" style="background:${cores[i]}"></div><span>${esc(c.nome)}</span><span class="legend-val">${fmt(totais[i])}</span></div>`).join('')
     +`<div style="border-top:1px solid var(--border);padding-top:.375rem;margin-top:.25rem;" class="legend-row"><strong>Total mês</strong><span class="legend-val" style="color:var(--accent);">${fmt(total)}</span></div>`;
   if(homePieInst)homePieInst.destroy();
   Chart.register(ChartDataLabels);
@@ -2166,12 +2183,12 @@ async function moverLojaMaster(id,direcao){
   const ordemA=a.ordem||0,ordemB=b.ordem||0;
   try{
     const {error:e1}=await db.from('lojas').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('lojas').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('lojas').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('lojas').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderMaster();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 
 let acessoOperacionalBloqueado=false;
@@ -2307,7 +2324,7 @@ function renderPrecoHistorico(){
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border2);color:var(--text3);font-size:11px;text-transform:uppercase;">Data</th><th style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--border2);color:var(--text3);font-size:11px;text-transform:uppercase;">Valor cx/un</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border2);color:var(--text3);font-size:11px;text-transform:uppercase;">Fornecedor</th></tr></thead>
-      <tbody>${hist.slice().reverse().map((h,i,arr)=>{const prev=arr[i+1];const d=prev?h.valor-prev.valor:0;const c=d>0?'var(--red)':d<0?'var(--accent)':'var(--text2)';return`<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);">${formatBR(h.data)}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;">${fmt(h.valor)} ${prev?`<small style="color:${c}">${d>0?'+':''}${fmt(d)}</small>`:''}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text2);">${h.fornecedor}</td></tr>`;}).join('')}</tbody>
+      <tbody>${hist.slice().reverse().map((h,i,arr)=>{const prev=arr[i+1];const d=prev?h.valor-prev.valor:0;const c=d>0?'var(--red)':d<0?'var(--accent)':'var(--text2)';return`<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);">${formatBR(h.data)}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;">${fmt(h.valor)} ${prev?`<small style="color:${c}">${d>0?'+':''}${fmt(d)}</small>`:''}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text2);">${esc(h.fornecedor)}</td></tr>`;}).join('')}</tbody>
     </table>`;
   chartWrap.style.display='';
   if(chartPrecoInst)chartPrecoInst.destroy();
@@ -2360,7 +2377,7 @@ function switchTab(tab){
 
   if(tab==='pedidos'){
     switchView(localStorage.getItem(chaveLS('ceasa_pedido_view'))||'tabela');
-    try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){showToast('Erro ao carregar pedidos: '+e.message);}
+    try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
     const ehPedidos=currentUser&&currentUser.role==='pedidos';
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
     const relSem=el('relatorioSemanalPedidos');
@@ -2476,11 +2493,11 @@ function filtrarProdutos(q){
     res.style.display='block';return;
   }
   res.innerHTML=matches.slice(0,12).map(m=>`
-    <div onclick="selecionarProduto('${m.produto.replace(/'/g,"\\'")}','${m.categoria}')"
+    <div onclick="selecionarProduto('${esc(escJs(m.produto))}','${m.categoria}')"
       style="padding:.625rem 1rem;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);font-size:13px;"
       onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
       <span>${emojiCat(m.categoria)}</span>
-      <span style="font-weight:500;">${m.produto}</span>
+      <span style="font-weight:500;">${esc(m.produto)}</span>
       <span style="font-size:11px;color:var(--text3);margin-left:auto;">${labelCat(m.categoria)}</span>
     </div>`).join('');
   res.style.display='block';
@@ -2566,7 +2583,7 @@ function renderPedido(){
     <div class="item-row" style="border-left-color:${corCat(p.categoria)};">
       <div class="item-head">
         <div>
-          <div class="item-title">${p.produto}</div>
+          <div class="item-title">${esc(p.produto)}</div>
           <div class="item-meta">${metaPedidoComCompra(p)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
@@ -2580,7 +2597,7 @@ function renderPedido(){
       ${p.status==='pendente'?`
         <div class="inline-form" id="ep-${p.id}">
           <select id="ep-cat-${p.id}" style="flex:1;min-width:100px;" onchange="onEditCatChange(${p.id})">
-            ${listaCatComFallback().map(c=>`<option value="${c.chave}"${p.categoria===c.chave?' selected':''}>${c.nome}</option>`).join('')}
+            ${listaCatComFallback().map(c=>`<option value="${c.chave}"${p.categoria===c.chave?' selected':''}>${esc(c.nome)}</option>`).join('')}
           </select>
           <select id="ep-prod-${p.id}" style="flex:2;min-width:140px;"></select>
           <input type="number" step="0.5" min="0" value="${p.qtd}" id="ep-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;"/>
@@ -2633,7 +2650,7 @@ function switchCatTabela(cat){
   saveDraftFromDOM();currentCatTab=cat;
   document.querySelectorAll('.cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
   const ts=el('tabelaSearch');if(ts)ts.value='';
-  try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast('Erro ao montar a tabela: '+e.message);}
+  try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao montar a tabela: '));}
   atualizarStickySave();
 }
 function renderTabelaGrid(){
@@ -2647,14 +2664,14 @@ function renderTabelaGrid(){
       const hasQ=parseFloat(d)>0;
       return`<tr class="${hasQ?'has-qty':''}">
         <td style="font-size:13px;">${p}</td>
-        <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${p.replace(/'/g,"\\'")}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
+        <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
         <td>
-          <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${p.replace(/'/g,"\\'")}'] = this.value;updateUnidCell(${i},'${cat}','${p.replace(/'/g,"\\'")}')">
+          <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
             <option value="caixa"${dt==='caixa'?' selected':''}>📦 Caixa</option>
             <option value="unidade"${dt==='unidade'?' selected':''}>🔢 Unidade</option>
           </select>
         </td>
-        <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/cx" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${p.replace(/'/g,"\\'")}'] = this.value"/></td>
+        <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/cx" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/></td>
       </tr>`;
     }).join('')+`</tbody>`;
 }
@@ -2686,7 +2703,7 @@ function renderPedidoTabela(){
     +itens.map(p=>`<div class="item-row" style="border-left-color:${corCat(p.categoria)};">
       <div class="item-head">
         <div>
-          <div class="item-title">${p.produto}</div>
+          <div class="item-title">${esc(p.produto)}</div>
           <div class="item-meta">${metaPedidoComCompra(p)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
@@ -2697,7 +2714,7 @@ function renderPedidoTabela(){
       </div>
       ${p.status==='pendente'?`<div class="inline-form" id="ept-${p.id}">
         <select id="ept-cat-${p.id}" style="flex:1;min-width:100px;" onchange="onEditCatChange(${p.id},true)">
-          ${listaCatComFallback().map(c=>`<option value="${c.chave}"${p.categoria===c.chave?' selected':''}>${c.nome}</option>`).join('')}
+          ${listaCatComFallback().map(c=>`<option value="${c.chave}"${p.categoria===c.chave?' selected':''}>${esc(c.nome)}</option>`).join('')}
         </select>
         <select id="ept-prod-${p.id}" style="flex:2;min-width:140px;"></select>
         <input type="number" step="1" min="0" value="${p.qtd}" id="ept-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;" oninput="this.value=Math.round(+this.value)||''"/>
@@ -2755,7 +2772,7 @@ function itemPendenteCatHtml(p){
   return `<div style="border-bottom:1px solid var(--border);padding:.75rem 1rem;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;">
           <div>
-            <div style="font-size:14px;font-weight:700;">${p.produto}</div>
+            <div style="font-size:14px;font-weight:700;">${esc(p.produto)}</div>
             <div style="font-size:13px;color:var(--text2);margin-top:2px;">${p.qtd} ${p.tipo==='caixa'?'caixa':'unidade'}${p.qtd!==1?'s':''} previsto${p.unidPorCaixa?' · '+p.unidPorCaixa+' un/cx':''}</div>
           </div>
         </div>
@@ -2848,7 +2865,7 @@ function renderPendentesCat(){
       const grupo=naoComp.filter(p=>p.categoria===k);
       if(!grupo.length)return;
       htmlNao+=grupo.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:13px;">${emoji} ${p.produto} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span>
+        <span style="font-size:13px;">${emoji} ${esc(p.produto)} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span>
         <button class="btn-ghost btn-sm" onclick="reabrirPendente(${p.id})">Reabrir</button>
       </div>`).join('');
     });
@@ -2862,7 +2879,7 @@ function renderPendentes(){
     <div class="item-row" style="cursor:default;border-left-color:${corCat(p.categoria)};">
       <div class="item-head" style="margin-bottom:.625rem;">
         <div>
-          <div class="item-title" style="font-size:16px;font-weight:700;">${p.produto}</div>
+          <div class="item-title" style="font-size:16px;font-weight:700;">${esc(p.produto)}</div>
           <div class="item-meta" style="font-size:14px;font-weight:600;margin-top:3px;color:var(--text);">${p.qtd} ${p.tipo==='caixa'?'caixa':'unidade'}${p.qtd!==1?'s':''} previsto · <span style="color:var(--text2)">${labelCat(p.categoria)}</span></div>
         </div>
       </div>
@@ -2903,7 +2920,7 @@ function renderPendentes(){
 function renderNaoComprados(){
   const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='nao_comprado');
   el('listaNaoComprados').innerHTML=itens.length?`<div class="sh"><i class="ti ti-ban"></i> Não comprados</div>`
-    +itens.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;">${p.produto} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span><button class="btn-ghost btn-sm" onclick="reabrirPendente(${p.id})">Reabrir</button></div>`).join(''):'';
+    +itens.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;">${esc(p.produto)} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span><button class="btn-ghost btn-sm" onclick="reabrirPendente(${p.id})">Reabrir</button></div>`).join(''):'';
 }
 function marcarNaoComprado(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='nao_comprado';syncPedidoUpdate(p);renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();}
 function reabrirPendente(id){const p=itensPedido.find(i=>i.id===id);if(!p)return;p.status='pendente';renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();}
@@ -2945,7 +2962,7 @@ function desfazerCompra(id){
     if(pedido){pedido.status='pendente';syncPedidoUpdate(pedido);}
   }
   // Remove do banco
-  db.from('compras').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
+  db.from('compras').delete().eq('id',id).then(({error})=>{if(error)showToast(traduzErro(error,'Erro ao remover do banco: '));});
   renderCompras();renderPendentes();renderNaoComprados();renderPedido();
   showToast('Compra desfeita — item voltou para pendente');
 }
@@ -2963,8 +2980,8 @@ function renderCompras(){
     const total=c.qtd*c.valorUnit;tot[c.categoria]=(tot[c.categoria]||0)+total;
     return`<div class="item-row" style="border-left-color:${corCat(c.categoria)};">
       <div class="item-head">
-        <div><div class="item-title">${c.produto}${c.planejado?' <i class="ti ti-clipboard-check" style="font-size:12px;color:var(--text3)"></i>':''}</div>
-        <div class="item-meta">${c.qtd} × ${fmt(c.valorUnit)} · ${c.fornecedor}</div></div>
+        <div><div class="item-title">${esc(c.produto)}${c.planejado?' <i class="ti ti-clipboard-check" style="font-size:12px;color:var(--text3)"></i>':''}</div>
+        <div class="item-meta">${c.qtd} × ${fmt(c.valorUnit)} · ${esc(c.fornecedor)}</div></div>
         <div class="item-amount"><div class="val">${fmt(total)}</div>
           <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:3px;">
             ${badge(PAY_BADGE[c.pagamento],PAY_LABEL[c.pagamento])}
@@ -2981,7 +2998,7 @@ function renderCompras(){
         </div>
         <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
           <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
-          <input value="${c.fornecedor}" id="ec-forn-${c.id}" placeholder="Fornecedor" list="ecForn-${c.id}"/>
+          <input value="${esc(c.fornecedor)}" id="ec-forn-${c.id}" placeholder="Fornecedor" list="ecForn-${c.id}"/>
           <datalist id="ecForn-${c.id}">${getAllFornByCat(c.categoria).map(f=>`<option value="${f}">`).join('')}</datalist>
         </div>
         <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
@@ -2999,7 +3016,7 @@ function renderCompras(){
       </div></div>`;
   }).join(''):`<div class="empty"><i class="ti ti-shopping-bag"></i>Nada comprado ainda.</div>`;
   const totGeral=Object.values(tot).reduce((a,v)=>a+v,0);
-  const cardsHtml=listaCatComFallback().map(c=>`<div class="stat"><div class="stat-label">${c.emoji} ${c.nome}</div><div class="stat-value">${fmt(tot[c.chave]||0)}</div></div>`).join('');
+  const cardsHtml=listaCatComFallback().map(c=>`<div class="stat"><div class="stat-label">${c.emoji} ${esc(c.nome)}</div><div class="stat-value">${fmt(tot[c.chave]||0)}</div></div>`).join('');
   el('statGridCompras').innerHTML=cardsHtml+`<div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total do dia</div><div class="stat-value" style="color:var(--accent);" id="totDia">${fmt(totGeral)}</div></div>`;
 }
 
@@ -3025,12 +3042,12 @@ async function moverFornecedor(id,cat,direcao){
   const ordemA=a.ordem||0,ordemB=b.ordem||0;
   try{
     const {error:e1}=await db.from('fornecedores').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('fornecedores').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('fornecedores').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('fornecedores').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderFornecedoresCadastro();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 async function salvarFornecedor(){
   const nome=el('fornNomeInput').value.trim();
@@ -3046,7 +3063,7 @@ async function salvarFornecedor(){
         if(!fornCustom[cat].find(x=>x.nome===nome))fornCustom[cat].push({id:editingFornId,nome});
       } else {found.nome=nome;}
       const {error}=await db.from('fornecedores').update({nome,categoria:cat}).eq('id',editingFornId);
-      if(error)showToast('Erro ao salvar no banco: '+error.message);
+      if(error)showToast(traduzErro(error,'Erro ao salvar no banco: '));
     }
     editingFornId=null;el('fornFormTitle').textContent='Cadastrar fornecedor';el('fornFormBtn').textContent='Adicionar';el('btnCancelForn').style.display='none';
     showToast('Fornecedor atualizado!');
@@ -3063,7 +3080,7 @@ async function salvarFornecedor(){
         loja_id:currentLojaId,nome,categoria:cat,padrao:false,ordem:ordemNova
       }).select().single();
       if(!error&&data){const f=fornCustom[cat].find(x=>x===novo);if(f)f.id=data.id;}
-      else if(error)showToast('Erro ao salvar fornecedor no banco: '+error.message);
+      else if(error)showToast(traduzErro(error,'Erro ao salvar fornecedor no banco: '));
     }catch(e){showToast('Erro ao salvar fornecedor no banco.');}
   }
   el('fornNomeInput').value='';renderFornecedoresCadastro();populateFornecedores('catAvulso','fornAvulsoList');
@@ -3104,7 +3121,7 @@ function fornFiltroPeriodo(tipo){
 function removeForn(id,cat){
   fornCustom[cat]=fornCustom[cat].filter(x=>x.id!==id);
   renderFornecedoresCadastro();populateFornecedores('catAvulso','fornAvulsoList');showToast('Fornecedor removido');
-  db.from('fornecedores').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
+  db.from('fornecedores').delete().eq('id',id).then(({error})=>{if(error)showToast(traduzErro(error,'Erro ao remover do banco: '));});
 }
 async function usarTabelaPadraoFornecedores(){
   if(!currentLojaId)return;
@@ -3112,7 +3129,7 @@ async function usarTabelaPadraoFornecedores(){
   const linhas=[];
   ['fruta','legume','verdura'].forEach(cat=>{FORNECEDORES_PADRAO[cat].forEach(nome=>{linhas.push({loja_id:currentLojaId,categoria:cat,nome,padrao:true});});});
   const {error}=await db.from('fornecedores').insert(linhas);
-  if(error){showToast('Erro ao copiar tabela padrão: '+error.message);return;}
+  if(error){showToast(traduzErro(error,'Erro ao copiar tabela padrão: '));return;}
   await recarregarListasLoja();
   showToast('Tabela padrão de fornecedores adicionada! 🎉');
 }
@@ -3140,7 +3157,7 @@ function renderFornecedoresCadastro(){
         </thead>
         <tbody>
           ${lista.map((f,i)=>`<tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px 12px;font-size:13px;">${f.nome}</td>
+            <td style="padding:8px 12px;font-size:13px;">${esc(f.nome)}</td>
             <td style="padding:8px 12px;">
               <div style="display:flex;gap:4px;justify-content:flex-end;align-items:center;">
                 <button class="btn-icon" style="font-size:14px;padding:2px;" ${i===0?'disabled':''} onclick="moverFornecedor(${f.id},'${k}',-1)" title="Mover pra cima"><i class="ti ti-chevron-up"></i></button>
@@ -3209,7 +3226,7 @@ async function addDespesa(){
       valor:nova.valor,forma:nova.forma
     }).select().single();
     if(!error&&data){const d=despesas.find(x=>x===nova);if(d)d.id=data.id;}
-    else if(error)showToast('Erro ao salvar despesa no banco: '+error.message);
+    else if(error)showToast(traduzErro(error,'Erro ao salvar despesa no banco: '));
   }catch(e){showToast('Erro ao salvar despesa no banco.');}
 }
 let despFiltroAtual='hoje';
@@ -3305,7 +3322,7 @@ function renderDespesas(){
 }
 function removeDespesa(id){
   despesas=despesas.filter(d=>d.id!==id);renderDespesas();showToast('Despesa removida');
-  db.from('despesas').delete().eq('id',id).then(({error})=>{if(error)showToast('Erro ao remover do banco: '+error.message);});
+  db.from('despesas').delete().eq('id',id).then(({error})=>{if(error)showToast(traduzErro(error,'Erro ao remover do banco: '));});
 }
 
 /* ── LOJA CADASTRO ── */
@@ -3356,8 +3373,8 @@ async function salvarLoja(){
       cor_destaque: loja.cor||'#60a5fa',
       cobranca_para: loja.cobrancaPara
     }).eq('id', targetId);
-    if(error){showToast('Erro ao salvar no banco: '+error.message);return;}
-  }catch(e){showToast('Erro ao salvar no banco: '+e.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao salvar no banco: '));return;}
+  }catch(e){showToast(traduzErro(e,'Erro ao salvar no banco: '));return;}
   editingLojaId=null;el('btnCancelLoja').style.display='none';el('lojaFormTitle').textContent='Cadastro da Loja';
   refreshHeader();renderLojas();loadLojaForm(targetId);showToast('Loja salva!');
 }
@@ -3376,8 +3393,8 @@ async function excluirLoja(id){
   if(digitado.trim().toLowerCase()!==loja.nome.trim().toLowerCase()){showToast('Nome digitado não confere. Nada foi excluído.');return;}
   try{
     const {error}=await db.from('lojas').update({ativa:false}).eq('id',id);
-    if(error){showToast('Erro ao excluir: '+error.message);return;}
-  }catch(e){showToast('Erro ao excluir: '+e.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao excluir: '));return;}
+  }catch(e){showToast(traduzErro(e,'Erro ao excluir: '));return;}
   lojas=lojas.filter(l=>l.id!==id);
   if(currentLojaId===id){await selectLoja(lojas[0].id);}
   else{renderLojas();}
@@ -3460,7 +3477,7 @@ async function criarNovaLojaSubmit(){
     if(error){
       const msg=(error.message||'').includes('row-level security')
         ?'Você atingiu o limite de 5 lojas novas em 24 horas. Espera um pouco ou, se for um caso legítimo de mais lojas, fala comigo (admin) que eu libero na hora.'
-        :'Erro ao criar loja: '+error.message;
+        :traduzErro(error,'Erro ao criar loja: ');
       showToast(msg);return;
     }
     const lojaObj={id:novaLoja.id,nome:novaLoja.nome,cidade:cidade,logo:logo,cnpj:cnpj,tel:tel,endereco:endereco,cobrancaPara:cobrarDeNovaLoja,ordem:ordemNova};
@@ -3472,7 +3489,7 @@ async function criarNovaLojaSubmit(){
     await selectLoja(lojaObj.id);
     switchTab('loja');
     setTimeout(()=>iniciarSetupLoja(lojaObj.id),400);
-  }catch(e){showToast('Erro ao criar loja: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao criar loja: '));}
 }
 function renderLojas(){
   const ordenadas=[...lojas].sort((a,b)=>(a.ordem||0)-(b.ordem||0));
@@ -3487,7 +3504,7 @@ function renderLojas(){
         <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           ${l.logo?`<img src="${l.logo}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-building-store" style="color:var(--text3);"></i>`}
         </div>
-        <div style="min-width:0;"><p style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${l.nome}</p><p style="font-size:12px;color:var(--text2);">${l.cidade||'—'} ${l.id===currentLojaId?'· <strong style=color:var(--accent)>Selecionada</strong>':''} ${l.cobrancaPara==='dono'?'· <span style="color:var(--amber);">Cobrança: você</span>':''}</p></div>
+        <div style="min-width:0;"><p style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.nome)}</p><p style="font-size:12px;color:var(--text2);">${l.cidade||'—'} ${l.id===currentLojaId?'· <strong style=color:var(--accent)>Selecionada</strong>':''} ${l.cobrancaPara==='dono'?'· <span style="color:var(--amber);">Cobrança: você</span>':''}</p></div>
       </div>
       <div class="actions">
         <button class="btn-ghost btn-sm" onclick="editLoja(${l.id})" title="Editar"><i class="ti ti-edit"></i></button>
@@ -3505,16 +3522,16 @@ async function moverLoja(id,direcao){
   const ordemA=a.ordem||0,ordemB=b.ordem||0;
   try{
     const {error:e1}=await db.from('lojas').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('lojas').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('lojas').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('lojas').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderLojas();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 
 /* ── USUÁRIOS (convites de gerente, vinculados a 1 loja) ── */
-function populateInvLoja(){el('invLoja').innerHTML=lojas.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');}
+function populateInvLoja(){el('invLoja').innerHTML=lojas.map(l=>`<option value="${l.id}">${esc(l.nome)}</option>`).join('');}
 const APP_URL='https://hortiz.vercel.app/';
 async function saveUsuario(){
   const nome=el('invNome').value.trim();const email=el('invEmail').value.trim();
@@ -3530,7 +3547,7 @@ async function saveUsuario(){
     showToast('Verificando…');
     try{
       const {data,error}=await db.rpc('convidar_ou_vincular_comprador',{p_email:email.toLowerCase(),p_loja_id:lojaId});
-      if(error){showToast('Erro: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro: '));return;}
       if(data==='vinculado'){
         showToast(email+' já tinha conta de comprador — vinculado a "'+lojaNome+'" na hora!');
         el('invNome').value='';el('invEmail').value='';el('invTelefone').value='';
@@ -3538,15 +3555,15 @@ async function saveUsuario(){
         return;
       }
       // se não tinha conta, criou convite normal — segue o fluxo de mandar o link
-    }catch(e){showToast('Erro: '+e.message);return;}
+    }catch(e){showToast(traduzErro(e,'Erro: '));return;}
   } else {
     try{
       const {error}=await db.from('convites_usuario').insert({email,telefone:telInput||null,loja_id:lojaId,role:papel,criado_por:currentUser.id});
       if(error){
-        showToast(error.code==='23505'?'Já existe um convite pendente pra esse e-mail nessa loja':'Erro: '+error.message);
+        showToast(error.code==='23505'?'Já existe um convite pendente pra esse e-mail nessa loja':traduzErro(error,'Erro: '));
         return;
       }
-    }catch(e){showToast('Erro: '+e.message);return;}
+    }catch(e){showToast(traduzErro(e,'Erro: '));return;}
   }
 
   const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':'gerenciar';
@@ -3565,9 +3582,9 @@ async function saveUsuario(){
 async function cancelarConvite(id){
   try{
     const {error}=await db.from('convites_usuario').delete().eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     showToast('Convite cancelado');renderUsuarios();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function renderUsuarios(){
   const cont=el('listaUsuarios');if(!cont)return;
@@ -3582,8 +3599,8 @@ async function renderUsuarios(){
     let html='';
     gerentesCache.forEach((g,i)=>{
       const lojaNome=(lojas.find(l=>l.id===g.loja_id)||{}).nome||'—';
-      const nomeEscapado=(g.nome||'').replace(/'/g,"\\'");
-      const opcoesLoja=lojas.map(l=>`<option value="${l.id}"${l.id===g.loja_id?' selected':''}>${l.nome}</option>`).join('');
+      const nomeEscapado=esc(escJs(g.nome||''));
+      const opcoesLoja=lojas.map(l=>`<option value="${l.id}"${l.id===g.loja_id?' selected':''}>${esc(l.nome)}</option>`).join('');
       const ehPedidos=g.role==='pedidos';
       const ehComprador=g.role==='comprador';
       const rotulo=ehComprador?'Comprador':ehPedidos?'Apenas Pedidos':'Gerente';
@@ -3593,8 +3610,8 @@ async function renderUsuarios(){
           <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===gerentesCache.length-1?'disabled':''} onclick="moverGerente('${g.id}',1)" title="Mover pra baixo"><i class="ti ti-chevron-down"></i></button>
         </div>
         <div style="flex:1;min-width:0;">
-          <p style="font-size:14px;font-weight:600;">${g.nome}</p>
-          <p style="font-size:12px;color:var(--text2);">${g.email}</p>
+          <p style="font-size:14px;font-weight:600;">${esc(g.nome)}</p>
+          <p style="font-size:12px;color:var(--text2);">${esc(g.email)}</p>
           <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${lojaNome}</p>
           ${lojas.length>1&&!ehComprador?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
         </div>
@@ -3608,7 +3625,7 @@ async function renderUsuarios(){
       const rotuloPapel=c.role==='pedidos'?'Apenas Pedidos':'Gerente';
       html+=`<div class="data-card" style="opacity:.8;">
         <div style="flex:1;min-width:0;">
-          <p style="font-size:14px;font-weight:600;">${c.email}</p>
+          <p style="font-size:14px;font-weight:600;">${esc(c.email)}</p>
           <p style="font-size:12px;color:var(--amber);">⏳ Convite pendente (${rotuloPapel}) · ${lojaNome}${c.telefone?' · '+c.telefone:''}</p>
         </div>
         <button class="btn-danger-soft btn-sm" onclick="cancelarConvite(${c.id})" title="Cancelar convite"><i class="ti ti-x"></i></button>
@@ -3626,12 +3643,12 @@ async function moverGerente(id,direcao){
   const ordemA=a.ordem||0,ordemB=b.ordem||0;
   try{
     const {error:e1}=await db.from('perfis').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('perfis').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('perfis').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('perfis').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderUsuarios();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 
 function toggleEditGerente(perfilId){
@@ -3644,29 +3661,29 @@ function toggleEditGerente(perfilId){
 async function reatribuirGerente(perfilId,novaLojaId){
   try{
     const {error}=await db.from('perfis').update({loja_id:parseInt(novaLojaId)}).eq('id',perfilId);
-    if(error){showToast('Erro ao mover gerente: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao mover gerente: '));return;}
     const novaLoja=lojas.find(l=>l.id===parseInt(novaLojaId));
     showToast('Gerente movido pra '+(novaLoja?novaLoja.nome:'outra loja')+'!');
     renderUsuarios();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function removerVinculoComprador(perfilId,lojaId,nome){
   if(!confirm('Desvincular "'+nome+'" dessa loja como comprador? Ele continua com acesso às outras lojas onde também é comprador.'))return;
   try{
     const {error}=await db.from('loja_membros').delete().eq('user_id',perfilId).eq('loja_id',lojaId).eq('role','comprador');
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     showToast('Desvinculado dessa loja.');
     renderUsuarios();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function removerGerente(perfilId,nome){
   if(!confirm('Remover o acesso de "'+nome+'"? Essa pessoa perde o acesso imediatamente e precisaria de um novo convite pra voltar.'))return;
   try{
     const {error}=await db.from('perfis').delete().eq('id',perfilId);
-    if(error){showToast('Erro ao remover: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao remover: '));return;}
     showToast('Acesso removido.');
     renderUsuarios();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 let gerenciarViewAtual='produtos';
@@ -3690,7 +3707,7 @@ async function usarTabelaPadraoDespesas(){
   showToast('Copiando tabela padrão…');
   const linhas=DESPESAS_TIPO_PADRAO.map(nome=>({loja_id:currentLojaId,nome,ativo:true}));
   const {error}=await db.from('despesas_tipos').upsert(linhas,{onConflict:'loja_id,nome'});
-  if(error){showToast('Erro ao copiar tabela padrão: '+error.message);return;}
+  if(error){showToast(traduzErro(error,'Erro ao copiar tabela padrão: '));return;}
   await recarregarListasLoja();
   showToast('Tabela padrão de despesas adicionada! 🎉');
 }
@@ -3708,12 +3725,12 @@ async function renderTiposDespesa(){
         <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===data.length-1?'disabled':''} onclick="moverTipoDespesa(${t.id},1)" title="Mover pra baixo"><i class="ti ti-chevron-down"></i></button>
       </div>
       <div style="flex:1;min-width:0;">
-        <p style="font-size:14px;font-weight:600;">${t.nome}</p>
+        <p style="font-size:14px;font-weight:600;">${esc(t.nome)}</p>
         <p style="font-size:12px;color:var(--text2);">${t.ativo?'Ativo':'Desativado'}</p>
       </div>
-      <button class="btn-ghost btn-sm" onclick="editTipoDespesa(${t.id},'${t.nome.replace(/'/g,"\\'")}')" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-ghost btn-sm" onclick="editTipoDespesa(${t.id},'${esc(escJs(t.nome))}')" title="Editar"><i class="ti ti-edit"></i></button>
       <button class="btn-ghost btn-sm" onclick="alternarTipoDespesaAtivo(${t.id},${!t.ativo})" title="${t.ativo?'Desativar':'Reativar'}"><i class="ti ti-${t.ativo?'eye-off':'eye'}"></i></button>
-      <button class="btn-danger-soft btn-sm" onclick="excluirTipoDespesa(${t.id},'${t.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
+      <button class="btn-danger-soft btn-sm" onclick="excluirTipoDespesa(${t.id},'${esc(escJs(t.nome))}')" title="Excluir"><i class="ti ti-trash"></i></button>
     </div>`).join('');
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
 }
@@ -3727,12 +3744,12 @@ async function moverTipoDespesa(id,direcao){
   const ordemA=a.ordem||0,ordemB=b.ordem||0;
   try{
     const {error:e1}=await db.from('despesas_tipos').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('despesas_tipos').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('despesas_tipos').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('despesas_tipos').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderTiposDespesa();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 function editTipoDespesa(id,nome){
   editingTipoDespesaId=id;
@@ -3753,12 +3770,12 @@ async function adicionarTipoDespesa(){
   try{
     if(editingTipoDespesaId!==null){
       const {error}=await db.from('despesas_tipos').update({nome}).eq('id',editingTipoDespesaId);
-      if(error){showToast('Erro: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro: '));return;}
       showToast(nome+' atualizado!');
       cancelEditTipoDespesa();
     } else {
       const {error}=await db.from('despesas_tipos').upsert({loja_id:currentLojaId,nome,ativo:true},{onConflict:'loja_id,nome'});
-      if(error){showToast('Erro: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro: '));return;}
       el('novoTipoDespesaNome').value='';
       if(!DESPESAS_TIPO.includes(nome))DESPESAS_TIPO.push(nome);
       showToast(nome+' adicionado!');
@@ -3766,27 +3783,27 @@ async function adicionarTipoDespesa(){
     const {data}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
     if(data)DESPESAS_TIPO=data.map(t=>t.nome);
     renderTiposDespesa();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function alternarTipoDespesaAtivo(id,novoStatus){
   try{
     const {error}=await db.from('despesas_tipos').update({ativo:novoStatus}).eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     const {data}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
     if(data)DESPESAS_TIPO=data.map(t=>t.nome);
     renderTiposDespesa();
     showToast(novoStatus?'Reativado':'Desativado');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function excluirTipoDespesa(id,nome){
   if(!confirm('Excluir o tipo de despesa "'+nome+'"? Despesas já lançadas com esse nome não são afetadas.'))return;
   try{
     const {error}=await db.from('despesas_tipos').delete().eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     DESPESAS_TIPO=DESPESAS_TIPO.filter(t=>t!==nome);
     renderTiposDespesa();
     showToast('Excluído');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 /* ── CATEGORIAS ── */
@@ -3802,7 +3819,7 @@ function renderCategoriasCadastro(){
     </div>
     <div style="font-size:22px;">${c.emoji}</div>
     <div style="flex:1;min-width:0;">
-      <p style="font-size:14px;font-weight:600;">${c.nome}</p>
+      <p style="font-size:14px;font-weight:600;">${esc(c.nome)}</p>
       <p style="font-size:12px;color:var(--text2);">${c.ativa?'Ativa':'Desativada'}</p>
     </div>
     <button class="btn-ghost btn-sm" onclick="editarCategoria(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
@@ -3815,10 +3832,10 @@ async function selecionarEmojiCategoria(emoji){
   if(editingCategoriaId!==null){
     try{
       const {error}=await db.from('categorias').update({emoji}).eq('id',editingCategoriaId);
-      if(error){showToast('Erro ao salvar emoji: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro ao salvar emoji: '));return;}
       showToast('Emoji atualizado!');
       await recarregarListasLoja();
-    }catch(e){showToast('Erro ao salvar emoji: '+e.message);}
+    }catch(e){showToast(traduzErro(e,'Erro ao salvar emoji: '));}
   }
 }
 async function adicionarCategoria(){
@@ -3828,11 +3845,11 @@ async function adicionarCategoria(){
   if(editingCategoriaId!==null){
     try{
       const {error}=await db.from('categorias').update({nome,emoji}).eq('id',editingCategoriaId);
-      if(error){showToast('Erro ao salvar: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro ao salvar: '));return;}
       showToast('Categoria atualizada!');
       cancelEditCategoria();
       await recarregarListasLoja();
-    }catch(e){showToast('Erro ao salvar: '+e.message);}
+    }catch(e){showToast(traduzErro(e,'Erro ao salvar: '));}
     return;
   }
   const chave=slugifyCategoria(nome);
@@ -3841,12 +3858,12 @@ async function adicionarCategoria(){
   showToast('Criando categoria…');
   try{
     const {error}=await db.from('categorias').insert({loja_id:currentLojaId,chave,nome,emoji,ordem,ativa:true});
-    if(error){showToast('Erro ao criar categoria: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao criar categoria: '));return;}
     el('novaCategoriaNome').value='';el('novaCategoriaEmoji').value='';
     document.querySelectorAll('.emoji-pick').forEach(b=>b.classList.remove('selecionado'));
     showToast('Categoria "'+nome+'" criada!');
     await recarregarListasLoja();
-  }catch(e){showToast('Erro ao criar categoria: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao criar categoria: '));}
 }
 function editarCategoria(id){
   const c=categoriasTodas.find(x=>x.id===id);if(!c)return;
@@ -3875,10 +3892,10 @@ async function alternarCategoriaAtiva(id,novoValor){
   }
   try{
     const {error}=await db.from('categorias').update({ativa:novoValor}).eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     await recarregarListasLoja();
     showToast(novoValor?'Categoria reativada!':'Categoria desativada.');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function moverCategoria(id,direcao){
   const ordenadas=[...categoriasTodas].sort((a,b)=>a.ordem-b.ordem);
@@ -3889,19 +3906,19 @@ async function moverCategoria(id,direcao){
   const ordemA=a.ordem,ordemB=b.ordem;
   try{
     const {error:e1}=await db.from('categorias').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('categorias').update({ordem:ordemA}).eq('id',b.id);
     if(e2){
       // desfaz a primeira mudança pra não deixar as duas categorias com o mesmo número de ordem
       await db.from('categorias').update({ordem:ordemA}).eq('id',a.id);
-      showToast('Erro ao reordenar: '+e2.message);
+      showToast(traduzErro(e2,'Erro ao reordenar: '));
       return;
     }
     // atualiza local na hora, sem esperar um reload completo
     a.ordem=ordemB;b.ordem=ordemA;
     renderCategoriasCadastro();
     renderTodosSeletoresCategoria();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 
 /* ── CHARTS ── */
@@ -3986,7 +4003,7 @@ function exportarConferenciaEntregaPdf(){
     });
     doc.save(`conferencia-entrega-${loja.nome||'loja'}-${currentDate}.pdf`);
     showToast('PDF de conferência exportado!');
-  }catch(e){showToast('Erro ao exportar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao exportar: '));}
 }
 function exportarRelatorioPdf(modo){
   if(typeof window.jspdf==='undefined'){showToast('A biblioteca de PDF ainda não carregou — espera um instante e tenta de novo.');return;}
@@ -4046,7 +4063,7 @@ function exportarRelatorioPdf(modo){
     }
     doc.save(`relatorio-${modo}-${mesRef}.pdf`);
     showToast('PDF gerado!');
-  }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao gerar PDF: '));}
 }
 function calcRelTotals(de,ate){
   const my=compras.filter(c=>c.lojaId===currentLojaId);
@@ -4069,7 +4086,7 @@ function renderRelTotals(){
   // Totais mensais
   const mes=calcRelTotals(meDe,meAte);
   const listaCat=listaCatComFallback();
-  el('statGridRelatorioMes').innerHTML=listaCat.map(c=>`<div class="stat"><div class="stat-label">${c.emoji} ${c.nome}/mês</div><div class="stat-value">${fmt(mes[c.chave]||0)}</div></div>`).join('')
+  el('statGridRelatorioMes').innerHTML=listaCat.map(c=>`<div class="stat"><div class="stat-label">${c.emoji} ${esc(c.nome)}/mês</div><div class="stat-value">${fmt(mes[c.chave]||0)}</div></div>`).join('')
     +`<div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total/mês</div><div class="stat-value" style="color:var(--accent);" id="rTotalMes">${fmt(mes.total)}</div></div>`;
   // Tabela semanas x categoria
   const sems=[0,1,2,3].map(i=>calcRelTotals(getWeekBounds(i,currentDate).start,getWeekBounds(i,currentDate).end));
@@ -4202,7 +4219,7 @@ function renderAssinatura(){
           ${l.logo?`<img src="${l.logo}" style="width:100%;height:100%;object-fit:cover;">`:'<i class="ti ti-building-store" style="color:var(--text3);"></i>'}
         </div>
         <div>
-          <p style="font-size:14px;font-weight:600;">${l.nome}</p>
+          <p style="font-size:14px;font-weight:600;">${esc(l.nome)}</p>
           <p style="font-size:12px;color:var(--text2);">${l.cidade||'—'}</p>
         </div>
       </div>
@@ -4357,7 +4374,7 @@ function renderMasterLista(){
     return `${cabecalhoGrupo}<div style="background:var(--bg2);border:1px solid ${l.ativa===false?'var(--red)':'var(--border)'};border-radius:var(--radius);padding:1rem;margin-bottom:.625rem;${l.ativa===false?'opacity:.75;':''}">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
         <div>
-          <div style="font-size:15px;font-weight:700;">${l.nome}${l.ativa===false?' <span style="font-size:11px;font-weight:700;color:var(--red);background:var(--red-bg);padding:2px 8px;border-radius:10px;margin-left:4px;">DESATIVADA</span>':''}</div>
+          <div style="font-size:15px;font-weight:700;">${esc(l.nome)}${l.ativa===false?' <span style="font-size:11px;font-weight:700;color:var(--red);background:var(--red-bg);padding:2px 8px;border-radius:10px;margin-left:4px;">DESATIVADA</span>':''}</div>
           <div style="font-size:12px;color:var(--text2);">${l.endereco||'—'} · ID: ${l.id}</div>
         </div>
         <span style="font-size:12px;font-weight:700;color:${statusCor[status]||'var(--text2)'};">${statusLabel[status]||status}</span>
@@ -4395,7 +4412,7 @@ function renderMasterLista(){
           <label style="font-size:10px;color:var(--text3);text-transform:uppercase;display:block;margin-bottom:2px;">Vinculada a</label>
           <select id="masterVinculo_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;">
             <option value="">— escolha a loja que paga —</option>
-            ${todasLojas.filter(o=>o.id!==l.id).map(o=>`<option value="${o.id}"${sub&&sub.vinculada_loja_id===o.id?' selected':''}>${o.nome}</option>`).join('')}
+            ${todasLojas.filter(o=>o.id!==l.id).map(o=>`<option value="${o.id}"${sub&&sub.vinculada_loja_id===o.id?' selected':''}>${esc(o.nome)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -4403,7 +4420,7 @@ function renderMasterLista(){
         <button class="btn-primary" onclick="salvarConfigLoja(${l.id})" style="flex:2;font-size:13px;"><i class="ti ti-device-floppy"></i> Salvar</button>
         ${status!=='isenta'?`<button class="btn-ghost" onclick="gerarCobrancaLoja(${l.id})" style="flex:1;font-size:13px;"><i class="ti ti-receipt"></i> Gerar cobrança</button>`:''}
         ${l.ativa===false?`<button class="btn-ghost" onclick="reativarLoja(${l.id})" style="flex:1;font-size:13px;color:var(--accent);"><i class="ti ti-rotate"></i> Reativar</button>
-        <button class="btn-danger-soft" onclick="excluirLojaDefinitivamenteMaster(${l.id},'${(l.nome||'').replace(/'/g,"\\'")}')" style="flex:1;font-size:13px;"><i class="ti ti-trash-x"></i> Excluir de vez</button>`:`<button class="btn-ghost" onclick="desativarLojaMaster(${l.id},'${(l.nome||'').replace(/'/g,"\\'")}')" style="flex:1;font-size:13px;color:var(--red);"><i class="ti ti-ban"></i> Desativar</button>`}
+        <button class="btn-danger-soft" onclick="excluirLojaDefinitivamenteMaster(${l.id},'${esc(escJs(l.nome||''))}')" style="flex:1;font-size:13px;"><i class="ti ti-trash-x"></i> Excluir de vez</button>`:`<button class="btn-ghost" onclick="desativarLojaMaster(${l.id},'${esc(escJs(l.nome||''))}')" style="flex:1;font-size:13px;color:var(--red);"><i class="ti ti-ban"></i> Desativar</button>`}
       </div>
       ${sub&&sub.asaas_sub_id?'<p style="font-size:11px;color:var(--text3);margin-top:.375rem;">Asaas ID: '+sub.asaas_sub_id+'</p>':''}
     </div>`;
@@ -4417,28 +4434,28 @@ async function excluirLojaDefinitivamenteMaster(lojaId,nomeLoja){
   showToast('Excluindo...');
   try{
     const {error}=await db.rpc('excluir_loja_definitivamente',{p_loja_id:lojaId});
-    if(error){showToast('Erro ao excluir: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao excluir: '));return;}
     showToast('Loja excluída definitivamente.');
     renderMaster(true);
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function desativarLojaMaster(lojaId,nomeLoja){
   if(!confirm('Desativar a loja "'+nomeLoja+'"? Ela some dos relatórios e do acesso de qualquer usuário vinculado a ela (os dados continuam guardados, e dá pra reativar depois).'))return;
   try{
     const {error}=await db.from('lojas').update({ativa:false}).eq('id',lojaId);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     showToast('Loja desativada.');
     renderMaster(true);
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function reativarLoja(lojaId){
   if(!confirm('Reativar essa loja? O acesso volta a funcionar pro dono e pros gerentes dela.'))return;
   try{
     const {error}=await db.from('lojas').update({ativa:true}).eq('id',lojaId);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     showToast('Loja reativada!');
     renderMaster(true);
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 function atualizarVinculoMasterWrap(lojaId){
@@ -4476,13 +4493,13 @@ async function salvarConfigLoja(lojaId){
       vinculada_loja_id:vinculadaLojaId,
       updated_at:new Date().toISOString()
     },{onConflict:'loja_id'});
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     showToast('✅ Configuração salva! R$ '+valor+'/mês · '+status);
     // Não recarrega o painel inteiro aqui de propósito — isso reconstrói a lista inteira
     // a partir do banco e apagava qualquer valor que você já tivesse digitado (mas ainda
     // não salvo) em OUTRA loja da lista, sem avisar. Se quiser ver os cards de resumo do
     // topo (Total de lojas, MRR etc.) atualizados, troca de aba e volta pra Master.
-  }catch(e){showToast('Erro ao salvar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao salvar: '));}
 }
 
 async function mensagemErroFuncao(error){
@@ -4513,10 +4530,10 @@ async function gerarCobrancaLoja(lojaId){
           loja_id:lojaId,valor_mensal:valorAtual,plano:planoParaCobrar,updated_at:new Date().toISOString()
         },{onConflict:'loja_id'});
         if(erroSalvar){
-          showToast('Erro ao salvar o valor antes de gerar a cobrança: '+erroSalvar.message);
+          showToast(traduzErro(erroSalvar,'Erro ao salvar o valor antes de gerar a cobrança: '));
           return;
         }
-      }catch(e){showToast('Erro ao salvar o valor antes de gerar a cobrança: '+e.message);return;}
+      }catch(e){showToast(traduzErro(e,'Erro ao salvar o valor antes de gerar a cobrança: '));return;}
     }
   }
   if(!planoParaCobrar){
@@ -4533,7 +4550,7 @@ async function gerarCobrancaLoja(lojaId){
     }
     if(!data.link){showToast('Assinatura criada, mas o link ainda não ficou pronto. Tenta de novo em alguns segundos.');return;}
     abrirModalPagamento(data,lojaId);
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 async function salvarConfigAsaas(){
@@ -4545,9 +4562,9 @@ async function salvarConfigAsaas(){
       {chave:'asaas_key',valor:asaasKey,updated_at:new Date().toISOString()},
       {chave:'asaas_modo',valor:asaasModo,updated_at:new Date().toISOString()}
     ],{onConflict:'chave'});
-    if(error){showToast('Erro ao salvar: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao salvar: '));return;}
     showToast('Configuração do Asaas salva!');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 /* ── MINHAS LOJAS — ASSINATURAS (todas as lojas do usuário) ── */
@@ -4575,7 +4592,7 @@ async function renderAssinaturasTodasLojas(){
               ${l.logo?`<img src="${l.logo}" style="width:100%;height:100%;object-fit:cover;">`:'<i class="ti ti-building-store" style="color:var(--text3);font-size:14px;"></i>'}
             </div>
             <div>
-              <p style="font-size:13px;font-weight:600;">${l.nome}${ativa?' <span style="color:var(--accent);font-size:11px;">· selecionada</span>':''}</p>
+              <p style="font-size:13px;font-weight:600;">${esc(l.nome)}${ativa?' <span style="color:var(--accent);font-size:11px;">· selecionada</span>':''}</p>
               <p style="font-size:11px;color:${cor};font-weight:600;">${label}${vencInfo}</p>
             </div>
           </div>
@@ -4586,7 +4603,7 @@ async function renderAssinaturasTodasLojas(){
         <div id="payLinkArea-${l.loja_id}" style="display:none;margin-top:.625rem;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.75rem;text-align:center;">
           <p style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:.375rem;">Link de pagamento gerado!</p>
           <a id="payLink-${l.loja_id}" href="#" target="_blank" class="btn-primary btn-sm" style="display:inline-block;text-decoration:none;"><i class="ti ti-external-link"></i> Pagar agora</a>
-        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.loja_id},'${l.nome.replace(/'/g,"\\'")}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
+        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.loja_id},'${esc(escJs(l.nome))}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
       </div>`;
     }).join('');
   }catch(e){cont.innerHTML='';}
@@ -4645,7 +4662,7 @@ async function verificarPagamentoAgora(){
     } else {
       showToast('Ainda não identificamos o pagamento no Asaas. Se você acabou de pagar, espera uns segundos e tenta de novo.');
     }
-  }catch(e){showToast('Erro ao verificar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao verificar: '));}
   finally{ if(btn){btn.disabled=false;btn.innerHTML=textoOriginal;} }
 }
 function mostrarAbaPagamento(aba){
@@ -4683,7 +4700,7 @@ async function selecionarPlanoLoja(lojaId,plano,btnEl){
     abrirModalPagamento(data,lojaId);
   }catch(e){
     if(btnEl)btnEl.innerHTML=textoOriginal;
-    showToast('Erro: '+e.message);
+    showToast(traduzErro(e,'Erro: '));
   }
 }
 
@@ -4704,7 +4721,7 @@ async function cancelarAssinaturaLoja(lojaId,nomeLoja){
     showToast('Assinatura cancelada.');
     if(lojaId===currentLojaId)await checkSubscription();
     renderAssinaturasTodasLojas();
-  }catch(e){showToast('Erro ao cancelar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao cancelar: '));}
 }
 async function cancelarAssinaturaAtiva(){
   const loja=lojas.find(l=>l.id===currentLojaId);
@@ -4725,7 +4742,7 @@ async function cancelarAssinaturaAtiva(){
     showToast('Assinatura cancelada.');
     await checkSubscription();
     renderAssinaturasTodasLojas();
-  }catch(e){showToast('Erro ao cancelar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao cancelar: '));}
 }
 async function selecionarPlano(plano){
   el('btnPlanoMensal').className='btn-primary';
@@ -4746,7 +4763,7 @@ async function selecionarPlano(plano){
     abrirModalPagamento(data,currentLojaId);
   }catch(e){
     el('payLoading').style.display='none';
-    showToast('Erro ao gerar cobrança: '+e.message);
+    showToast(traduzErro(e,'Erro ao gerar cobrança: '));
   }
 }
 
@@ -4875,11 +4892,11 @@ async function escolherSetupProdutos(opcao){
         const linhas=DESPESAS_TIPO_PADRAO.map(nome=>({loja_id:setupLojaIdAtual,nome,ativo:true}));
         ({error}=await db.from('despesas_tipos').upsert(linhas,{onConflict:'loja_id,nome'}));
       }
-      if(error){showToast('Erro ao copiar base: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro ao copiar base: '));return;}
       await recarregarListasLoja();
       showToast('Base pronta copiada!');
       avancarSetup();
-    }catch(e){showToast('Erro: '+e.message);}
+    }catch(e){showToast(traduzErro(e,'Erro: '));}
   }
 }
 async function lerArquivoTextoAuto(file){
@@ -4984,7 +5001,7 @@ async function importarSetupCsv(){
     if(tipo!=='despesas'){
       statusEl.textContent='Conferindo categorias…';
       const{criadas,erro}=await garantirCategoriasDoImport(brutas,setupLojaIdAtual);
-      if(erro){statusEl.textContent='Erro ao criar categorias novas: '+erro.message;return;}
+      if(erro){statusEl.textContent=traduzErro(erro,'Erro ao criar categorias novas: ');return;}
       if(criadas)statusEl.textContent=`${criadas} categoria(s) nova(s) criada(s) automaticamente…`;
     }
     const {resultado,erros}=resolverLinhasImport(brutas,tipo);
@@ -5002,14 +5019,14 @@ async function importarSetupCsv(){
       const linhas=resultado.map(r=>({loja_id:setupLojaIdAtual,nome:r.nome,ativo:true}));
       ({error}=await db.from('despesas_tipos').upsert(linhas,{onConflict:'loja_id,nome'}));
     }
-    if(error){statusEl.textContent='Erro ao importar: '+error.message;return;}
+    if(error){statusEl.textContent=traduzErro(error,'Erro ao importar: ');return;}
     await recarregarListasLoja();
     let msg=`✅ ${resultado.length} item(ns) importado(s)!`;
     if(erros.length)msg+=` (${erros.length} linha(s) ignorada(s))`;
     statusEl.textContent=msg;
     showToast('Importado!');
     setTimeout(avancarSetup,1600);
-  }catch(e){statusEl.textContent='Erro: '+e.message;}
+  }catch(e){statusEl.textContent=traduzErro(e,'Erro: ');}
 }
 
 async function importarCsvGerenciar(tipo){
@@ -5023,7 +5040,7 @@ async function importarCsvGerenciar(tipo){
     if(!brutas.length){showToast('Nenhum item válido encontrado no arquivo. Confira o formato do CSV.');return;}
     if(tipo!=='despesas'){
       const{criadas,erro}=await garantirCategoriasDoImport(brutas,currentLojaId);
-      if(erro){showToast('Erro ao criar categorias novas: '+erro.message);return;}
+      if(erro){showToast(traduzErro(erro,'Erro ao criar categorias novas: '));return;}
       if(criadas){showToast(`${criadas} categoria(s) nova(s) criada(s) automaticamente!`);renderTodosSeletoresCategoria();}
     }
     const {resultado,erros}=resolverLinhasImport(brutas,tipo);
@@ -5043,13 +5060,13 @@ async function importarCsvGerenciar(tipo){
       const linhas=resultado.map(r=>({loja_id:currentLojaId,nome:r.nome,ativo:true}));
       ({error}=await db.from('despesas_tipos').upsert(linhas,{onConflict:'loja_id,nome'}));
     }
-    if(error){showToast('Erro ao importar: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao importar: '));return;}
     await recarregarListasLoja();
     fileInput.value='';
     let msg=`✅ ${resultado.length} item(ns) importado(s)!`;
     if(erros.length)msg+=` ${erros.length} linha(s) ignorada(s): `+erros.slice(0,2).join(' | ');
     showToast(msg);
-  }catch(e){showToast('Erro ao importar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao importar: '));}
 }
 
 async function carregarProdutos(){
@@ -5095,7 +5112,7 @@ async function renderRelatorioSemanalPedidos(){
     });
     const linhas=Object.values(porProduto).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.produto.localeCompare(b.produto,'pt-BR'));
     cont.innerHTML=`<p style="font-size:13px;font-weight:700;margin-bottom:.625rem;">📋 Quantidade pedida — últimos 7 dias (${formatBR(de)} a ${formatBR(currentDate)})</p>`+
-      (linhas.length?linhas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border);"><span>${emojiCat(l.categoria)} ${l.produto}</span><strong>${l.qtd}</strong></div>`).join(''):'<p style="font-size:12px;color:var(--text2);">Nenhum pedido nesses 7 dias.</p>');
+      (linhas.length?linhas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border);"><span>${emojiCat(l.categoria)} ${esc(l.produto)}</span><strong>${l.qtd}</strong></div>`).join(''):'<p style="font-size:12px;color:var(--text2);">Nenhum pedido nesses 7 dias.</p>');
   }catch(e){cont.innerHTML='<p style="font-size:13px;color:var(--red);">Erro ao carregar relatório.</p>';}
 }
 /* ── VISÃO DO COMPRADOR (consolidada entre lojas vinculadas) ── */
@@ -5142,11 +5159,11 @@ function baixarCsv(nomeArquivo,linhas){
 async function exportarProdutosCsv(){
   try{
     const {data,error}=await db.from('produtos').select('nome,categoria').eq('loja_id',currentLojaId).eq('ativo',true).order('categoria').order('nome');
-    if(error){showToast('Erro ao exportar: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao exportar: '));return;}
     const linhas=[['nome','categoria'],...(data||[]).map(p=>[p.nome,p.categoria])];
     baixarCsv('produtos.csv',linhas);
     showToast('CSV exportado!');
-  }catch(e){showToast('Erro ao exportar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao exportar: '));}
 }
 function exportarFornecedoresCsv(){
   const linhas=[['nome','categoria']];
@@ -5157,11 +5174,11 @@ function exportarFornecedoresCsv(){
 async function exportarDespesasTiposCsv(){
   try{
     const {data,error}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
-    if(error){showToast('Erro ao exportar: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao exportar: '));return;}
     const linhas=[['nome'],...(data||[]).map(t=>[t.nome])];
     baixarCsv('tipos_despesa.csv',linhas);
     showToast('CSV exportado!');
-  }catch(e){showToast('Erro ao exportar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao exportar: '));}
 }
 function normalizarNome(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -5173,7 +5190,7 @@ async function exportarRelatorioCompradorPdf(){
   showToast('Gerando relatório…');
   try{
     const {data,error}=await db.from('itens_pedido').select('*').in('loja_id',idsLojas).eq('data',currentDate).eq('status','pendente');
-    if(error){showToast('Erro ao gerar: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao gerar: '));return;}
     if(!data||!data.length){showToast('Nenhum pedido pendente nessa data.');return;}
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF();
@@ -5203,7 +5220,7 @@ async function exportarRelatorioCompradorPdf(){
     });
     doc.save(`pedido-por-loja-${currentDate}.pdf`);
     showToast('Relatório gerado!');
-  }catch(e){showToast('Erro ao gerar PDF: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao gerar PDF: '));}
 }
 async function buscarPedidoConsolidadoAgregado(){
   const idsLojas=lojas.map(l=>l.id);
@@ -5258,7 +5275,7 @@ async function exportarPedidoConsolidadoTotalPdf(){
     });
     doc.save(`pedido-consolidado-total-${currentDate}.pdf`);
     showToast('PDF consolidado exportado!');
-  }catch(e){showToast('Erro ao exportar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao exportar: '));}
 }
 async function renderComprasComprador(){
   const cont=el('listaComprasComprador');if(!cont)return;
@@ -5267,7 +5284,7 @@ async function renderComprasComprador(){
     const idsLojas=lojas.map(l=>l.id);
     if(!idsLojas.length){cont.innerHTML='<div class="empty">Você ainda não está vinculado a nenhuma loja como comprador.</div>';renderComprasCompradorFeitas();return;}
     const {data,error}=await db.from('itens_pedido').select('*').in('loja_id',idsLojas).eq('data',currentDate).eq('status','pendente').eq('categoria',comprCatAtiva);
-    if(error){cont.innerHTML='<div class="empty">Erro ao carregar: '+error.message+'</div>';return;}
+    if(error){cont.innerHTML=traduzErro(error,'<div class="empty">Erro ao carregar: ')+'</div>';return;}
     const porProduto={};
     (data||[]).forEach(item=>{
       const key=normalizarNome(item.produto);
@@ -5282,7 +5299,7 @@ async function renderComprasComprador(){
       <div style="border:1px solid var(--border);padding:.75rem 1rem;background:var(--bg2);border-radius:var(--radius-sm);margin-bottom:.625rem;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.375rem;">
           <div>
-            <div style="font-size:14px;font-weight:700;">${l.produto}</div>
+            <div style="font-size:14px;font-weight:700;">${esc(l.produto)}</div>
             <div style="font-size:13px;color:var(--text2);margin-top:2px;">${l.total} ${l.tipo==='caixa'?'caixa':'unidade'}${l.total!==1?'s':''} previsto · ${l.origens.length} loja${l.origens.length!==1?'s':''}</div>
           </div>
         </div>
@@ -5290,7 +5307,7 @@ async function renderComprasComprador(){
         <div id="detalheComprador-${idx}" style="display:none;margin:.5rem 0;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);">
           ${l.origens.map(o=>({...o,nomeLoja:(lojas.find(x=>x.id===o.lojaId)||{}).nome||'Loja '+o.lojaId}))
             .sort((a,b)=>a.nomeLoja.localeCompare(b.nomeLoja,'pt-BR',{sensitivity:'base'}))
-            .map(o=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>${o.nomeLoja}</span><span>${o.qtd}</span></div>`).join('')}
+            .map(o=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>${esc(o.nomeLoja)}</span><span>${o.qtd}</span></div>`).join('')}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin:.5rem 0 .4rem;">
           <div>
@@ -5354,13 +5371,13 @@ async function confirmarCompraComprador(idx){
       const loja=lojas.find(x=>x.id===origem.lojaId);
       const nomeLoja=loja?loja.nome:'Loja '+origem.lojaId;
       const {error:updError}=await db.from('itens_pedido').update({status:'comprado'}).eq('id',origem.itemId);
-      if(updError){falhas.push(nomeLoja+': '+updError.message);continue;}
+      if(updError){falhas.push(nomeLoja+traduzErro(updError,': '));continue;}
       const {data:insData,error:insError}=await db.from('compras').insert({
         loja_id:origem.lojaId,item_pedido_id:origem.itemId,data:currentDate,
         produto:linha.produto,categoria:linha.categoria,qtd:qtdDestaLoja,
         valor_unit:valorUnit,fornecedor,pagamento
       }).select().single();
-      if(insError){falhas.push(nomeLoja+': '+insError.message);continue;}
+      if(insError){falhas.push(nomeLoja+traduzErro(insError,': '));continue;}
       // Espelha a mudança no estado local em memória — sem isso, a tela "por
       // loja" (item por item / por categoria) ficava mostrando o pedido como
       // pendente até um recarregamento manual, mesmo já confirmado no banco
@@ -5389,7 +5406,7 @@ async function confirmarCompraComprador(idx){
     // Atualiza também a visão "por loja", caso o usuário volte pra ela sem
     // recarregar a página.
     renderPendentes();renderPendentesCat();renderNaoComprados();renderPedido();renderCompras();renderFornecedores();
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function renderComprasCompradorFeitas(){
   const cont=el('listaComprasCompradorFeitas');if(!cont)return;
@@ -5402,8 +5419,8 @@ async function renderComprasCompradorFeitas(){
       const loja=lojas.find(x=>x.id===c.loja_id);
       return `<div class="data-card">
         <div style="flex:1;min-width:0;">
-          <p style="font-size:14px;font-weight:600;">${c.produto} <span style="font-size:11px;color:var(--text3);font-weight:400;">— ${loja?loja.nome:'Loja '+c.loja_id}</span></p>
-          <p style="font-size:12px;color:var(--text2);">${c.qtd} × ${fmt(c.valor_unit)} · ${c.fornecedor||'—'}</p>
+          <p style="font-size:14px;font-weight:600;">${esc(c.produto)} <span style="font-size:11px;color:var(--text3);font-weight:400;">— ${esc(loja?loja.nome:'Loja '+c.loja_id)}</span></p>
+          <p style="font-size:12px;color:var(--text2);">${c.qtd} × ${fmt(c.valor_unit)} · ${esc(c.fornecedor||'—')}</p>
         </div>
         <p style="font-size:14px;font-weight:700;">${fmt(c.qtd*c.valor_unit)}</p>
       </div>`;
@@ -5418,7 +5435,7 @@ async function usarTabelaPadraoProdutos(){
   const linhas=[];
   ['fruta','legume','verdura'].forEach(cat=>{CATALOGO_PADRAO[cat].forEach(nome=>{linhas.push({loja_id:currentLojaId,categoria:cat,nome});});});
   const {error}=await db.from('produtos').upsert(linhas,{onConflict:'loja_id,categoria,nome'});
-  if(error){showToast('Erro ao copiar tabela padrão: '+error.message);return;}
+  if(error){showToast(traduzErro(error,'Erro ao copiar tabela padrão: '));return;}
   produtosGerenciarCache=null;
   await renderGerenciarProdutos(true);
   showToast('Tabela padrão de produtos adicionada! 🎉');
@@ -5467,12 +5484,12 @@ function renderGerenciarProdutosLista(){
       <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===filtrados.length-1?'disabled':''} onclick="moverProduto(${p.id},1)" title="Mover pra baixo"><i class="ti ti-chevron-down"></i></button>
     </div>`:''}
     <div style="flex:1;min-width:0;">
-      <p style="font-size:14px;font-weight:600;">${emojiCat(p.categoria)} ${p.nome}</p>
+      <p style="font-size:14px;font-weight:600;">${emojiCat(p.categoria)} ${esc(p.nome)}</p>
       <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'} · ${p.tipo==='unidade'?'🔢 un':'📦 cx'}${p.unid_por_caixa?' · '+p.unid_por_caixa+' un/cx':''}</p>
     </div>
-    <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}','${p.categoria}','${p.tipo||'caixa'}',${p.unid_por_caixa||'null'})" title="Editar"><i class="ti ti-edit"></i></button>
+    <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${esc(escJs(p.nome))}','${p.categoria}','${p.tipo||'caixa'}',${p.unid_por_caixa||'null'})" title="Editar"><i class="ti ti-edit"></i></button>
     <button class="btn-ghost btn-sm" onclick="alternarProdutoAtivo(${p.id},${!p.ativo})" title="${p.ativo?'Desativar':'Reativar'}"><i class="ti ti-${p.ativo?'eye-off':'eye'}"></i></button>
-    <button class="btn-danger-soft btn-sm" onclick="excluirProduto(${p.id},'${p.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
+    <button class="btn-danger-soft btn-sm" onclick="excluirProduto(${p.id},'${esc(escJs(p.nome))}')" title="Excluir"><i class="ti ti-trash"></i></button>
   </div>`).join('');
 }
 async function moverProduto(id,direcao){
@@ -5485,28 +5502,28 @@ async function moverProduto(id,direcao){
   const ordemA=a.ordem,ordemB=b.ordem;
   try{
     const {error:e1}=await db.from('produtos').update({ordem:ordemB}).eq('id',a.id);
-    if(e1){showToast('Erro ao reordenar: '+e1.message);return;}
+    if(e1){showToast(traduzErro(e1,'Erro ao reordenar: '));return;}
     const {error:e2}=await db.from('produtos').update({ordem:ordemA}).eq('id',b.id);
-    if(e2){await db.from('produtos').update({ordem:ordemA}).eq('id',a.id);showToast('Erro ao reordenar: '+e2.message);return;}
+    if(e2){await db.from('produtos').update({ordem:ordemA}).eq('id',a.id);showToast(traduzErro(e2,'Erro ao reordenar: '));return;}
     a.ordem=ordemB;b.ordem=ordemA;
     renderGerenciarProdutosLista();
-  }catch(e){showToast('Erro ao reordenar: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 async function excluirTodosProdutosCategoria(){
   const catFiltro=el('gerProdCatFilter')?el('gerProdCatFilter').value:'';
   if(!catFiltro)return;
   try{
     const {data,error:errCount}=await db.from('produtos').select('id').eq('loja_id',currentLojaId).eq('categoria',catFiltro);
-    if(errCount){showToast('Erro: '+errCount.message);return;}
+    if(errCount){showToast(traduzErro(errCount,'Erro: '));return;}
     const qtd=(data||[]).length;
     if(!qtd){showToast('Não há produtos nessa categoria.');return;}
     if(!confirm(`Excluir todos os ${qtd} produtos da categoria "${labelCat(catFiltro)}"? Pedidos e compras já feitos não são afetados. Essa ação não pode ser desfeita.`))return;
     const {error}=await db.from('produtos').delete().eq('loja_id',currentLojaId).eq('categoria',catFiltro);
-    if(error){showToast('Erro ao excluir: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro ao excluir: '));return;}
     await carregarProdutos();
     renderGerenciarProdutos(true);
     showToast(`${qtd} produto(s) excluído(s) da categoria ${labelCat(catFiltro)}.`);
-  }catch(e){showToast('Erro ao excluir: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro ao excluir: '));}
 }
 function editProduto(id,nome,categoria,tipo,unidPorCaixa){
   editingProdutoId=id;
@@ -5537,12 +5554,12 @@ async function adicionarProduto(){
   try{
     if(editingProdutoId!==null){
       const {error}=await db.from('produtos').update({nome,categoria,tipo,unid_por_caixa:unidPorCaixa}).eq('id',editingProdutoId);
-      if(error){showToast('Erro: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro: '));return;}
       showToast(nome+' atualizado!');
       cancelEditProduto();
     } else {
       const {error}=await db.from('produtos').upsert({loja_id:currentLojaId,categoria,nome,tipo,unid_por_caixa:unidPorCaixa,ativo:true},{onConflict:'loja_id,categoria,nome'});
-      if(error){showToast('Erro: '+error.message);return;}
+      if(error){showToast(traduzErro(error,'Erro: '));return;}
       el('novoProdutoNome').value='';
       el('novoProdutoTipo').value='caixa';
       el('novoProdutoUnidCx').value='';
@@ -5551,26 +5568,26 @@ async function adicionarProduto(){
     }
     await carregarProdutos();
     renderGerenciarProdutos(true);
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function alternarProdutoAtivo(id,novoStatus){
   try{
     const {error}=await db.from('produtos').update({ativo:novoStatus}).eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     await carregarProdutos();
     renderGerenciarProdutos(true);
     showToast(novoStatus?'Produto reativado':'Produto desativado');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function excluirProduto(id,nome){
   if(!confirm('Excluir "'+nome+'" da lista de produtos? Pedidos e compras já feitos com esse nome não são afetados.'))return;
   try{
     const {error}=await db.from('produtos').delete().eq('id',id);
-    if(error){showToast('Erro: '+error.message);return;}
+    if(error){showToast(traduzErro(error,'Erro: '));return;}
     await carregarProdutos();
     renderGerenciarProdutos(true);
     showToast('Produto excluído');
-  }catch(e){showToast('Erro: '+e.message);}
+  }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
 async function carregarDadosDaLoja(){
@@ -5689,13 +5706,13 @@ async function syncPedidoInsert(item){
       loja_id: item.lojaId, data: item.data, produto: item.produto, categoria: item.categoria,
       qtd: item.qtd, tipo: item.tipo, unid_por_caixa: item.unidPorCaixa, status: item.status
     }).select().single();
-    if(error){ showToast('Erro ao salvar pedido: '+error.message); return; }
+    if(error){ showToast(traduzErro(error,'Erro ao salvar pedido: ')); return; }
     if(data){
       // substitui o id temporário pelo id real do banco
       const local = itensPedido.find(i=>i===item);
       if(local) local.id = data.id;
     }
-  }catch(e){ showToast('Erro ao salvar pedido: '+e.message); }
+  }catch(e){ showToast(traduzErro(e,'Erro ao salvar pedido: ')); }
 }
 async function syncPedidoUpdate(item){
   try{
@@ -5703,14 +5720,14 @@ async function syncPedidoUpdate(item){
       produto: item.produto, categoria: item.categoria, qtd: item.qtd,
       tipo: item.tipo, unid_por_caixa: item.unidPorCaixa, status: item.status
     }).eq('id', item.id);
-    if(error)showToast('Erro ao atualizar pedido: '+error.message);
-  }catch(e){ showToast('Erro ao atualizar pedido: '+e.message); }
+    if(error)showToast(traduzErro(error,'Erro ao atualizar pedido: '));
+  }catch(e){ showToast(traduzErro(e,'Erro ao atualizar pedido: ')); }
 }
 async function syncPedidoDelete(id){
   try{
     const {error}=await db.from('itens_pedido').delete().eq('id', id);
-    if(error)showToast('Erro ao remover pedido: '+error.message);
-  }catch(e){ showToast('Erro ao remover pedido: '+e.message); }
+    if(error)showToast(traduzErro(error,'Erro ao remover pedido: '));
+  }catch(e){ showToast(traduzErro(e,'Erro ao remover pedido: ')); }
 }
 async function syncCompraInsert(compra, itemPedidoId){
   try{
@@ -5719,12 +5736,12 @@ async function syncCompraInsert(compra, itemPedidoId){
       produto: compra.produto, categoria: compra.categoria, qtd: compra.qtd,
       valor_unit: compra.valorUnit, fornecedor: compra.fornecedor, pagamento: compra.pagamento
     }).select().single();
-    if(error){ showToast('Erro ao salvar compra: '+error.message); return; }
+    if(error){ showToast(traduzErro(error,'Erro ao salvar compra: ')); return; }
     if(data){
       const local = compras.find(c=>c===compra);
       if(local) local.id = data.id;
     }
-  }catch(e){ showToast('Erro ao salvar compra: '+e.message); }
+  }catch(e){ showToast(traduzErro(e,'Erro ao salvar compra: ')); }
 }
 async function syncCompraUpdate(compra){
   try{
@@ -5732,8 +5749,8 @@ async function syncCompraUpdate(compra){
       qtd: compra.qtd, valor_unit: compra.valorUnit,
       fornecedor: compra.fornecedor, pagamento: compra.pagamento
     }).eq('id', compra.id);
-    if(error)showToast('Erro ao atualizar compra: '+error.message);
-  }catch(e){ showToast('Erro ao atualizar compra: '+e.message); }
+    if(error)showToast(traduzErro(error,'Erro ao atualizar compra: '));
+  }catch(e){ showToast(traduzErro(e,'Erro ao atualizar compra: ')); }
 }
 
 function init(){
@@ -5810,13 +5827,13 @@ function renderHistoricoCompras(){
       <td style="padding:8px 12px;">
         <div style="display:flex;align-items:center;gap:7px;">
           <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
-          <span style="font-size:13px;font-weight:500;">${r.produto}</span>
+          <span style="font-size:13px;font-weight:500;">${esc(r.produto)}</span>
         </div>
       </td>
       <td style="padding:8px 12px;font-size:12px;color:var(--text2);">${formatBR(r.data)}</td>
       <td style="padding:8px 12px;text-align:right;font-size:13px;">${r.qtd}</td>
       <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;">${fmt(r.valorUnit)}</td>
-      <td style="padding:8px 12px;font-size:12px;color:var(--text2);">${r.fornecedor}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--text2);">${esc(r.fornecedor)}</td>
       <td style="padding:8px 12px;">${badge(PAY_BADGE[r.pagamento]||'badge-pg',PAY_LABEL[r.pagamento]||r.pagamento)}</td>
     </tr>`).join('')
     :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhuma compra encontrada com esses filtros.</td></tr>`;
@@ -5840,13 +5857,13 @@ async function aplicarMargemTodos(){
     const rows=prods.map(p=>({loja_id:currentLojaId,produto:p,tipo,valor:val,updated_at:new Date().toISOString()}));
     if(rows.length){
       const {error}=await db.from('margens_custom').upsert(rows,{onConflict:'loja_id,produto'});
-      if(error)showToast('Erro ao salvar margens no banco: '+error.message);
+      if(error)showToast(traduzErro(error,'Erro ao salvar margens no banco: '));
     }
   }catch(e){showToast('Erro ao salvar margens no banco.');}
 }
 async function limparMargensCustom(){
   margemCustom={};renderPrecosMedia();showToast('Margens personalizadas resetadas');
-  const {error:_e1}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId);if(_e1)showToast('Erro ao resetar no banco: '+_e1.message);
+  const {error:_e1}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId);if(_e1)showToast(traduzErro(_e1,'Erro ao resetar no banco: '));
 }
 let precosViewAtual='margem';
 function switchPrecosView(view){
@@ -5936,12 +5953,12 @@ function renderPrecosMedia(){
     const borderPct= isCustom&&mc.tipo==='pct' ? 'var(--amber)' : 'var(--border2)';
     const borderRs = isCustom&&mc.tipo==='valor' ? 'var(--amber)' : 'var(--border2)';
 
-    return `<tr data-prod="${r.produto.replace(/"/g,'&quot;')}" style="border-bottom:1px solid var(--border);${rowBg}">
+    return `<tr data-prod="${esc(r.produto)}" style="border-bottom:1px solid var(--border);${rowBg}">
   <td style="padding:8px 10px;min-width:130px;">
     <div style="display:flex;align-items:center;gap:7px;">
       <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
       <div>
-        <div style="font-size:13px;font-weight:500;">${r.produto}</div>
+        <div style="font-size:13px;font-weight:500;">${esc(r.produto)}</div>
         ${r.temUnid?`<div style="font-size:10px;color:var(--text3)">cx: ${fmt(r.mediaCx)}</div>`:''}
         ${isCustom?'<div style="font-size:10px;color:var(--amber);font-weight:600;">custom</div>':''}
       </div>
@@ -6043,14 +6060,14 @@ async function precosSalvar(pid){
   } else {
     delete margemCustom[prod];
     showToast('Margem de "'+prod+'" resetada');
-    const {error:_e2}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e2)showToast('Erro ao resetar no banco: '+_e2.message);
+    const {error:_e2}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e2)showToast(traduzErro(_e2,'Erro ao resetar no banco: '));
     renderPrecosMedia();return;
   }
   try{
     const {error:_e3}=await db.from('margens_custom').upsert({
       loja_id:currentLojaId,produto:prod,tipo,valor,updated_at:new Date().toISOString()
     },{onConflict:'loja_id,produto'});
-    if(_e3)showToast('Erro ao salvar margem no banco: '+_e3.message);
+    if(_e3)showToast(traduzErro(_e3,'Erro ao salvar margem no banco: '));
   }catch(e){showToast('Erro ao salvar margem no banco.');}
   renderPrecosMedia();
 }
@@ -6061,7 +6078,7 @@ async function precosResetar(pid){
   delete margemCustom[prod];
   renderPrecosMedia();
   showToast('Margem resetada para o padrão global');
-  const {error:_e3}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e3)showToast('Erro ao resetar no banco: '+_e3.message);
+  const {error:_e3}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId).eq('produto',prod);if(_e3)showToast(traduzErro(_e3,'Erro ao resetar no banco: '));
 }
 
 window.addEventListener('load',async function(){

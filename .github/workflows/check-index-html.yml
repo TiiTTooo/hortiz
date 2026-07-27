@@ -1,0 +1,48 @@
+name: Verificação de sintaxe (index.html)
+
+# Roda em todo push e pull request. Extrai os blocos <script> do index.html
+# e valida a sintaxe JS com Node — pega erro de digitação/sintaxe antes
+# do deploy automático no Vercel. Não faz lint de estilo nem roda testes,
+# só garante que o arquivo não está quebrado.
+on:
+  push:
+    paths:
+      - 'index.html'
+      - '.github/workflows/check-index-html.yml'
+  pull_request:
+    paths:
+      - 'index.html'
+  workflow_dispatch: {}
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validar sintaxe dos blocos <script> do index.html
+        run: |
+          node -e '
+            const fs = require("fs");
+            const html = fs.readFileSync("index.html", "utf8");
+            const scripts = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+            if (scripts.length === 0) {
+              console.error("Nenhum bloco <script> inline encontrado — verifique se o index.html não mudou de estrutura.");
+              process.exit(1);
+            }
+            let ok = true;
+            scripts.forEach((s, i) => {
+              try {
+                new Function(s);
+              } catch (e) {
+                console.error(`Erro de sintaxe no bloco <script> ${i}: ${e.message}`);
+                ok = false;
+              }
+            });
+            if (!ok) process.exit(1);
+            console.log(`OK: ${scripts.length} bloco(s) <script> sintaticamente válido(s).`);
+          '
