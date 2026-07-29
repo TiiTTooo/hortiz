@@ -1751,12 +1751,15 @@ async function doRegister(){
   });
   if(perfilError){ mostrarErroRegistro(traduzErro(perfilError,'Erro ao criar perfil: ')); return; }
 
-  if(roleFinal==='comprador'){
+  if(roleFinal==='comprador'||roleFinal==='manager'){
+    // Gerente também precisa de uma linha em loja_membros desde o início — é o que
+    // permite o dono conceder acesso a lojas extras depois (ver "Usuários") e é o
+    // que a Edge Function de assinatura usa pra autorizar o gerente a pagar.
     try{
-      const {error:membroError}=await db.from('loja_membros').insert({user_id:userId,loja_id:lojaIdFinal,role:'comprador'});
-      if(membroError){mostrarErroRegistro(traduzErro(membroError,'Conta criada, mas houve um erro ao vincular você como comprador dessa loja: ')+'. Fale com quem te convidou.');return;}
+      const {error:membroError}=await db.from('loja_membros').insert({user_id:userId,loja_id:lojaIdFinal,role:roleFinal});
+      if(membroError){mostrarErroRegistro(traduzErro(membroError,'Conta criada, mas houve um erro ao vincular você a essa loja: ')+'. Fale com quem te convidou.');return;}
     }catch(e){
-      mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você como comprador dessa loja. Fale com quem te convidou.');
+      mostrarErroRegistro('Conta criada, mas houve um erro ao vincular você a essa loja. Fale com quem te convidou.');
       return;
     }
   }
@@ -1805,7 +1808,6 @@ async function enterApp(){
   const ehPedidos=currentUser.role==='pedidos';
   const ehComprador=currentUser.role==='comprador';
   el('sideUsuarios').style.display=ehGerente?'none':'';
-  el('sideAssinatura').style.display=ehGerente?'none':'';
   el('sideLoja').style.display=ehGerente?'none':'';
   await carregarMinhasLojas();
   if(ehPedidos){
@@ -1911,7 +1913,10 @@ async function openStoreModal(){
 function renderStoreModalList(){
   const souAdmin=currentUser.isAdmin;
   const busca=(el('storeModalBusca').value||'').toLowerCase();
-  let available=(currentUser.role==='owner'?lojas:lojas.filter(l=>l.id===currentUser.lojaId)).slice();
+  // Gerente agora também pode ter mais de uma loja liberada pelo dono (ver aba Usuários) —
+  // "lojas" já vem correta pra ele via carregarMinhasLojas() (lê loja_membros por user_id,
+  // sem filtrar por papel), então só precisa deixar de restringir a lista aqui.
+  let available=((currentUser.role==='owner'||currentUser.role==='manager')?lojas:lojas.filter(l=>l.id===currentUser.lojaId)).slice();
   available=available.map(l=>({...l,donoNome:souAdmin?(donoPorLojaSwitcher[l.id]||'Sem dono definido'):null}));
   available.sort((a,b)=>{
     if(souAdmin){
@@ -2218,15 +2223,17 @@ async function checkSubscription(){
   atualizarLabelsPreco();
   updateSubStatus();
   atualizarAvisoVencimento();
-  const souGerente=currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
+  const souApenasPedidos=currentUser&&currentUser.role==='pedidos';
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
-    if(souGerente){
-      // Gerente não mexe com pagamento — só perde acesso às abas operacionais
+    if(souApenasPedidos){
+      // Apenas-pedidos não mexe com pagamento — só perde acesso às abas operacionais
       el('subWall').style.display='none';
       const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
       if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
     } else {
+      // Gerente também vê a parede de pagamento agora — ele pode gerar a cobrança e pagar,
+      // só não pode cancelar (isso continua exclusivo do dono, ver renderAssinatura()).
       el('subWall').style.display='flex';
     }
   } else {
@@ -2349,7 +2356,7 @@ function abaRestauravelParaUsuario(tab){
   if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
   if(currentUser.role==='comprador')return tab==='home'||tab==='compras';
   if(tab==='master')return !!currentUser.isAdmin;
-  if(currentUser.role==='manager')return !['usuarios','assinatura','loja'].includes(tab);
+  if(currentUser.role==='manager')return !['usuarios','loja'].includes(tab);
   return true;
 }
 function switchTab(tab){
@@ -3596,6 +3603,15 @@ async function renderUsuarios(){
       db.from('convites_usuario').select('*, lojas(nome)').eq('criado_por',currentUser.id).order('created_at',{ascending:false})
     ]);
     gerentesCache=gerentes||[];
+    // Gerente (role='manager') pode ter mais de uma loja liberada — busca todas as
+    // linhas de loja_membros dele, não só a loja "ativa" (perfis.loja_id). "Apenas
+    // pedidos" e "comprador" continuam de loja única / vínculo próprio, sem mudança.
+    const idsGerentesManager=gerentesCache.filter(g=>g.role==='manager').map(g=>g.id);
+    let lojasPorGerente={};
+    if(idsGerentesManager.length){
+      const {data:membros}=await db.from('loja_membros').select('user_id,loja_id').eq('role','manager').in('user_id',idsGerentesManager);
+      (membros||[]).forEach(m=>{(lojasPorGerente[m.user_id]=lojasPorGerente[m.user_id]||[]).push(m.loja_id);});
+    }
     let html='';
     gerentesCache.forEach((g,i)=>{
       const lojaNome=(lojas.find(l=>l.id===g.loja_id)||{}).nome||'—';
@@ -3603,7 +3619,13 @@ async function renderUsuarios(){
       const opcoesLoja=lojas.map(l=>`<option value="${l.id}"${l.id===g.loja_id?' selected':''}>${esc(l.nome)}</option>`).join('');
       const ehPedidos=g.role==='pedidos';
       const ehComprador=g.role==='comprador';
+      const ehManager=g.role==='manager';
       const rotulo=ehComprador?'Comprador':ehPedidos?'Apenas Pedidos':'Gerente';
+      const lojasDele=ehManager?(lojasPorGerente[g.id]||[g.loja_id]):[];
+      const nomesLojasDele=lojasDele.map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
+      const checklistLojas=ehManager?lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
+          <input type="checkbox" ${lojasDele.includes(l.id)?'checked':''} onchange="toggleLojaGerente('${g.id}',${l.id},this.checked)"> ${esc(l.nome)}
+        </label>`).join(''):'';
       html+=`<div class="data-card">
         <div style="display:flex;flex-direction:column;gap:2px;">
           <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===0?'disabled':''} onclick="moverGerente('${g.id}',-1)" title="Mover pra cima"><i class="ti ti-chevron-up"></i></button>
@@ -3612,11 +3634,12 @@ async function renderUsuarios(){
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${esc(g.nome)}</p>
           <p style="font-size:12px;color:var(--text2);">${esc(g.email)}</p>
-          <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${lojaNome}</p>
-          ${lojas.length>1&&!ehComprador?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
+          <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${ehManager?(nomesLojasDele||lojaNome):lojaNome}</p>
+          ${lojas.length>1&&ehPedidos?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
+          ${lojas.length>1&&ehManager?`<div id="gerLojaChk-${g.id}" style="display:none;margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
         </div>
         ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':'badge-manager',rotulo)}
-        ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="Editar loja"><i class="ti ti-edit"></i></button>`:''}
+        ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${ehManager?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
         ${ehComprador?`<button class="btn-danger-soft btn-sm" onclick="removerVinculoComprador('${g.id}',${g.loja_id},'${nomeEscapado}')" title="Desvincular desta loja"><i class="ti ti-unlink"></i></button>`:`<button class="btn-danger-soft btn-sm" onclick="removerGerente('${g.id}','${nomeEscapado}')" title="Remover acesso"><i class="ti ti-trash"></i></button>`}
       </div>`;
     });
@@ -3652,20 +3675,36 @@ async function moverGerente(id,direcao){
 }
 
 function toggleEditGerente(perfilId){
-  const txt=el('gerLojaTxt-'+perfilId);const sel=el('gerLojaSel-'+perfilId);
-  if(!txt||!sel)return;
-  txt.style.display='none';
-  sel.style.display='';
-  sel.focus();
+  const txt=el('gerLojaTxt-'+perfilId);
+  const sel=el('gerLojaSel-'+perfilId);
+  const chk=el('gerLojaChk-'+perfilId);
+  if(!txt)return;
+  if(sel){txt.style.display='none';sel.style.display='';sel.focus();return;}
+  if(chk){chk.style.display=(chk.style.display==='none')?'block':'none';return;}
 }
 async function reatribuirGerente(perfilId,novaLojaId){
+  // usado só pra "apenas pedidos" (loja única) — gerente usa toggleLojaGerente (multi-loja)
   try{
     const {error}=await db.from('perfis').update({loja_id:parseInt(novaLojaId)}).eq('id',perfilId);
-    if(error){showToast(traduzErro(error,'Erro ao mover gerente: '));return;}
+    if(error){showToast(traduzErro(error,'Erro ao mover: '));return;}
     const novaLoja=lojas.find(l=>l.id===parseInt(novaLojaId));
-    showToast('Gerente movido pra '+(novaLoja?novaLoja.nome:'outra loja')+'!');
+    showToast('Movido pra '+(novaLoja?novaLoja.nome:'outra loja')+'!');
     renderUsuarios();
   }catch(e){showToast(traduzErro(e,'Erro: '));}
+}
+async function toggleLojaGerente(perfilId,lojaId,marcado){
+  try{
+    if(marcado){
+      const {error}=await db.rpc('conceder_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
+      if(error){showToast(traduzErro(error,'Erro ao liberar loja: '));renderUsuarios();return;}
+      showToast('Loja liberada pro gerente!');
+    }else{
+      const {error}=await db.rpc('revogar_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
+      if(error){showToast(traduzErro(error,'Erro ao remover acesso: '));renderUsuarios();return;}
+      showToast('Acesso a essa loja removido.');
+    }
+    renderUsuarios();
+  }catch(e){showToast(traduzErro(e,'Erro: '));renderUsuarios();}
 }
 async function removerVinculoComprador(perfilId,lojaId,nome){
   if(!confirm('Desvincular "'+nome+'" dessa loja como comprador? Ele continua com acesso às outras lojas onde também é comprador.'))return;
@@ -3677,9 +3716,12 @@ async function removerVinculoComprador(perfilId,lojaId,nome){
   }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 async function removerGerente(perfilId,nome){
-  if(!confirm('Remover o acesso de "'+nome+'"? Essa pessoa perde o acesso imediatamente e precisaria de um novo convite pra voltar.'))return;
+  if(!confirm('Remover o acesso de "'+nome+'"? Essa pessoa perde o acesso imediatamente (todas as lojas) e precisaria de um novo convite pra voltar.'))return;
   try{
-    const {error}=await db.from('perfis').delete().eq('id',perfilId);
+    // RPC em vez de delete direto: também limpa as linhas de loja_membros do gerente
+    // (podem ser várias, agora que ele pode ter acesso a mais de uma loja), senão
+    // ficavam vínculos órfãos no banco depois que o perfil já tinha sido removido.
+    const {error}=await db.rpc('remover_acesso_gerente',{p_perfil_id:perfilId});
     if(error){showToast(traduzErro(error,'Erro ao remover: '));return;}
     showToast('Acesso removido.');
     renderUsuarios();
@@ -4201,7 +4243,9 @@ function renderAssinatura(){
     if(isActive){
       titulo.textContent='Sua assinatura';
       assinarDiv.style.display='none';
-      cancelarDiv.style.display='block';
+      // Cancelar é exclusivo do dono — gerente vê o status e pode gerar/pagar cobrança,
+      // mas não tem esse botão (mesma regra aplicada no back-end, na Edge Function smart-service).
+      cancelarDiv.style.display=(currentUser&&currentUser.role==='owner')?'block':'none';
     } else {
       titulo.textContent='Assinar agora';
       assinarDiv.style.display='flex';
@@ -4603,7 +4647,7 @@ async function renderAssinaturasTodasLojas(){
         <div id="payLinkArea-${l.loja_id}" style="display:none;margin-top:.625rem;background:var(--accent-bg);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:.75rem;text-align:center;">
           <p style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:.375rem;">Link de pagamento gerado!</p>
           <a id="payLink-${l.loja_id}" href="#" target="_blank" class="btn-primary btn-sm" style="display:inline-block;text-decoration:none;"><i class="ti ti-external-link"></i> Pagar agora</a>
-        </div>`:status==='ativa'?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.loja_id},'${esc(escJs(l.nome))}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
+        </div>`:(status==='ativa'&&currentUser&&currentUser.role==='owner')?`<button class="btn-danger-soft btn-sm btn-w" onclick="cancelarAssinaturaLoja(${l.loja_id},'${esc(escJs(l.nome))}')"><i class="ti ti-x"></i> Cancelar assinatura</button>`:''}
       </div>`;
     }).join('');
   }catch(e){cont.innerHTML='';}
@@ -4705,6 +4749,7 @@ async function selecionarPlanoLoja(lojaId,plano,btnEl){
 }
 
 async function cancelarAssinaturaLoja(lojaId,nomeLoja){
+  if(!currentUser||currentUser.role!=='owner'){showToast('Apenas o dono pode cancelar a assinatura.');return;}
   const digitado=prompt('Cancelar a assinatura de "'+nomeLoja+'"? A renovação para imediatamente e o acesso fica bloqueado até assinar de novo.\n\nPra confirmar, digite o nome exato da loja:');
   if(digitado===null)return;
   if(digitado.trim().toLowerCase()!==nomeLoja.trim().toLowerCase()){showToast('Nome digitado não confere. Nada foi cancelado.');return;}
@@ -4724,6 +4769,7 @@ async function cancelarAssinaturaLoja(lojaId,nomeLoja){
   }catch(e){showToast(traduzErro(e,'Erro ao cancelar: '));}
 }
 async function cancelarAssinaturaAtiva(){
+  if(!currentUser||currentUser.role!=='owner'){showToast('Apenas o dono pode cancelar a assinatura.');return;}
   const loja=lojas.find(l=>l.id===currentLojaId);
   const nomeLoja=loja?loja.nome:'esta loja';
   const digitado=prompt('Cancelar a assinatura de "'+nomeLoja+'"? A renovação para imediatamente e o acesso fica bloqueado até assinar de novo.\n\nPra confirmar, digite o nome exato da loja:');

@@ -59,21 +59,28 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Parâmetro plano é obrigatório' }, 400);
     }
 
-    // 3) Só o dono da loja (ou o admin master) pode gerenciar a assinatura dela
+    // 3) Quem pode gerenciar a assinatura dessa loja:
+    //    - Cancelar: só o dono (ou admin master). Ação destrutiva, mexe com receita.
+    //    - Assinar / gerar cobrança: dono OU gerente (admin master também). Gerente paga,
+    //      mas não cancela — essa distinção é decidida aqui, não só escondendo botão no app.
     const { data: perfil } = await supabase.from('perfis').select('is_admin').eq('id', userId).single();
     let autorizado = !!perfil?.is_admin;
     if (!autorizado) {
+      const rolesPermitidos = action === 'cancelar' ? ['owner'] : ['owner', 'manager'];
       const { data: membro } = await supabase
         .from('loja_membros')
         .select('role')
         .eq('user_id', userId)
         .eq('loja_id', loja_id)
-        .eq('role', 'owner')
+        .in('role', rolesPermitidos)
         .maybeSingle();
       autorizado = !!membro;
     }
     if (!autorizado) {
-      return jsonResponse({ error: 'Você não tem permissão para gerenciar a assinatura dessa loja' }, 403);
+      const msg = action === 'cancelar'
+        ? 'Apenas o dono da loja pode cancelar a assinatura.'
+        : 'Você não tem permissão para gerenciar a assinatura dessa loja';
+      return jsonResponse({ error: msg }, 403);
     }
 
     // 4) Lê a chave e o modo (sandbox/produção) configurados no painel Master
