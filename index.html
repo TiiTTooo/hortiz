@@ -469,6 +469,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <input type="date" id="pedidoData" onchange="onDateChange()" style="flex:1;min-width:140px;"/>
             <select id="historicoSelect" onchange="onHistoricoChange()" style="flex:2;min-width:160px;"></select>
           </div>
+          <div id="avisoDataPedidos" style="display:none;margin-top:.5rem;"></div>
         </div>
         <div class="seg-tabs">
           <button class="seg-tab" data-view="tabela" onclick="switchView('tabela')"><i class="ti ti-table"></i> Tabela completa</button>
@@ -524,6 +525,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="compra-date-pill"><i class="ti ti-calendar-event"></i><span id="comprarHeading"></span></div>
           <button class="btn-icon" onclick="navegarDiaCompra(1)" title="Próximo dia com pedido"><i class="ti ti-chevron-right"></i></button>
         </div>
+        <div id="avisoDataCompras" style="display:none;margin-bottom:.75rem;"></div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:.75rem;">
           <button class="btn-ghost btn-sm" onclick="switchTab('pedidos')" style="gap:6px;flex-shrink:0;">
@@ -2384,7 +2386,7 @@ function switchTab(tab){
 
   if(tab==='pedidos'){
     switchView(localStorage.getItem(chaveLS('ceasa_pedido_view'))||'tabela');
-    try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
+    try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();atualizarAvisoData();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
     const ehPedidos=currentUser&&currentUser.role==='pedidos';
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
     const relSem=el('relatorioSemanalPedidos');
@@ -2435,6 +2437,30 @@ function switchView(view){
 function refreshHeadings(){
   const ch=el('comprarHeading');if(ch)ch.textContent=`Comprando o pedido de ${formatBR(currentDate)}`;
   refreshHeader();
+  atualizarAvisoData();
+}
+// Pedidos e Compras compartilham a mesma "data ativa" (currentDate). É fácil trocar de
+// dia sem perceber (setinhas em Compras, campo de data ou histórico em Pedidos) e, ao
+// voltar pra outra aba, parecer que um pedido "sumiu" — quando na verdade ele só está
+// visível no dia certo, que não é mais o dia sendo exibido. Este aviso deixa isso óbvio
+// nas duas abas, com um atalho de um clique pra voltar pro dia de hoje.
+function atualizarAvisoData(){
+  const naoEhHoje=currentDate!==todayStr();
+  const html=naoEhHoje?`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fef3cd;border:1px solid #f0c36d;color:#7a5b00;border-radius:var(--radius-sm);padding:.5rem .75rem;font-size:13px;">
+    <i class="ti ti-alert-triangle"></i>
+    <span style="flex:1;min-width:180px;">Você está vendo o pedido de <b>${formatBR(currentDate)}</b> — não é hoje.</span>
+    <button class="btn-ghost btn-sm" onclick="voltarParaHoje()" style="background:#fff;">Voltar pra hoje</button>
+  </div>`:'';
+  const b1=el('avisoDataPedidos');if(b1){b1.style.display=naoEhHoje?'block':'none';b1.innerHTML=html;}
+  const b2=el('avisoDataCompras');if(b2){b2.style.display=naoEhHoje?'block':'none';b2.innerHTML=html;}
+}
+function voltarParaHoje(){
+  const hoje=todayStr();
+  const inp=el('pedidoData');if(inp)inp.value=hoje;
+  currentDate=hoje;
+  refreshHeadings();renderHistorico();renderAll();
+  const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;
+  showToast('Voltou pro pedido de hoje.');
 }
 function onDateChange(){currentDate=el('pedidoData').value||todayStr();refreshHeadings();renderHistorico();renderAll();const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;}
 function onHistoricoChange(){const v=el('historicoSelect').value;if(v){currentDate=v;el('pedidoData').value=v;refreshHeadings();renderAll();}}
@@ -5460,18 +5486,63 @@ async function renderComprasCompradorFeitas(){
     const idsLojas=lojas.map(l=>l.id);
     if(!idsLojas.length){cont.innerHTML='';return;}
     const {data,error}=await db.from('compras').select('*').in('loja_id',idsLojas).eq('data',currentDate);
-    if(error||!data||!data.length){cont.innerHTML='<div class="empty">Nada comprado ainda hoje.</div>';return;}
+    if(error){cont.innerHTML=traduzErro(error,'<div class="empty">Erro ao carregar: ')+'</div>';return;}
+    if(!data||!data.length){cont.innerHTML='<div class="empty">Nada comprado ainda hoje.</div>';return;}
     cont.innerHTML=data.map(c=>{
       const loja=lojas.find(x=>x.id===c.loja_id);
-      return `<div class="data-card">
-        <div style="flex:1;min-width:0;">
-          <p style="font-size:14px;font-weight:600;">${esc(c.produto)} <span style="font-size:11px;color:var(--text3);font-weight:400;">— ${esc(loja?loja.nome:'Loja '+c.loja_id)}</span></p>
-          <p style="font-size:12px;color:var(--text2);">${c.qtd} × ${fmt(c.valor_unit)} · ${esc(c.fornecedor||'—')}</p>
+      return `<div class="data-card" style="flex-direction:column;align-items:stretch;gap:.375rem;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <p style="font-size:14px;font-weight:600;">${esc(c.produto)} <span style="font-size:11px;color:var(--text3);font-weight:400;">— ${esc(loja?loja.nome:'Loja '+c.loja_id)}</span></p>
+            <p style="font-size:12px;color:var(--text2);">${c.qtd} × ${fmt(c.valor_unit)} · ${esc(c.fornecedor||'—')}</p>
+          </div>
+          <p style="font-size:14px;font-weight:700;">${fmt(c.qtd*c.valor_unit)}</p>
+          <button class="btn-icon" title="Editar" onclick="toggleEditCompraComprador(${c.id})"><i class="ti ti-edit" style="font-size:15px;"></i></button>
         </div>
-        <p style="font-size:14px;font-weight:700;">${fmt(c.qtd*c.valor_unit)}</p>
+        <div class="inline-form" id="ecc-${c.id}" style="flex-wrap:wrap;gap:.5rem;">
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:80px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Quantidade</label>
+            <input type="number" step="1" value="${c.qtd}" id="ecc-qtd-${c.id}" placeholder="Qtd"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:90px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Valor cx/un (R$)</label>
+            <input type="number" step="0.01" value="${c.valor_unit}" id="ecc-val-${c.id}" placeholder="R$ 0,00"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
+            <input value="${esc(c.fornecedor||'')}" id="ecc-forn-${c.id}" placeholder="Fornecedor"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Pagamento</label>
+            <select id="ecc-pag-${c.id}">
+              <option value="PG"${c.pagamento==='PG'?' selected':''}>💵 Dinheiro</option>
+              <option value="PGT"${c.pagamento==='PGT'?' selected':''}>📲 Transferência/Pix</option>
+              <option value="F"${c.pagamento==='F'?' selected':''}>📒 Fiado</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:2px;width:100%;">
+            <button class="btn-primary" onclick="salvarEdicaoCompraComprador(${c.id})" style="flex:1;"><i class="ti ti-device-floppy"></i> Salvar alteração</button>
+          </div>
+        </div>
       </div>`;
     }).join('');
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar.</div>';}
+}
+function toggleEditCompraComprador(id){const d=el('ecc-'+id);if(d)d.classList.toggle('open');}
+async function salvarEdicaoCompraComprador(id){
+  const qtd=parseFloat((el('ecc-qtd-'+id).value||'').replace(',','.'));
+  const val=parseFloat((el('ecc-val-'+id).value||'').replace(',','.'));
+  const forn=el('ecc-forn-'+id).value.trim()||'Sem fornecedor';
+  const pag=el('ecc-pag-'+id).value;
+  if(isNaN(qtd)||qtd<0||isNaN(val)||val<=0){showToast('Preencha quantidade e valor corretamente');return;}
+  const {error}=await db.from('compras').update({qtd,valor_unit:val,fornecedor:forn,pagamento:pag}).eq('id',id);
+  if(error){showToast(traduzErro(error,'Erro ao salvar alteração: '));return;}
+  showToast('Compra atualizada!');
+  // Espelha no array local, caso essa loja seja a atualmente carregada (tela "por loja").
+  const localC=compras.find(x=>x.id===id);
+  if(localC){localC.qtd=qtd;localC.valorUnit=val;localC.fornecedor=forn;localC.pagamento=pag;}
+  renderComprasCompradorFeitas();
+  renderCompras();
 }
 
 let produtosGerenciarCache=null;
