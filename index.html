@@ -5535,8 +5535,12 @@ async function salvarEdicaoCompraComprador(id){
   const forn=el('ecc-forn-'+id).value.trim()||'Sem fornecedor';
   const pag=el('ecc-pag-'+id).value;
   if(isNaN(qtd)||qtd<0||isNaN(val)||val<=0){showToast('Preencha quantidade e valor corretamente');return;}
-  const {error}=await db.from('compras').update({qtd,valor_unit:val,fornecedor:forn,pagamento:pag}).eq('id',id);
+  // .select() depois do update é de propósito: se a RLS bloquear a alteração (ex: peça
+  // fora do escopo de acesso do usuário), o Supabase não retorna erro — só devolve 0
+  // linhas. Sem checar isso, a edição falha calada e o valor antigo continua no banco.
+  const {data,error}=await db.from('compras').update({qtd,valor_unit:val,fornecedor:forn,pagamento:pag}).eq('id',id).select();
   if(error){showToast(traduzErro(error,'Erro ao salvar alteração: '));return;}
+  if(!data||!data.length){showToast('Não foi possível salvar — você pode não ter permissão pra editar essa compra. Avise o suporte.');return;}
   showToast('Compra atualizada!');
   // Espelha no array local, caso essa loja seja a atualmente carregada (tela "por loja").
   const localC=compras.find(x=>x.id===id);
