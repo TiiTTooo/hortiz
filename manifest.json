@@ -1,6 +1,6 @@
 {
-  "name": "CEASA Compras",
-  "short_name": "CEASA",
+  "name": "Hortiz",
+  "short_name": "Hortiz",
   "description": "Sistema de gestão de compras para hortifrúti no CEASA",
   "start_url": "/",
   "display": "standalone",
