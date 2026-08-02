@@ -2719,6 +2719,16 @@ function switchCatTabela(cat){
   try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao montar a tabela: '));}
   atualizarStickySave();
 }
+function qtdJaPedida(cat,produto){
+  // Soma tudo que já foi lançado nesse dia/loja pra esse produto (pendente, comprado
+  // ou não-comprado) — usado só pra exibir "já pedido hoje" na tabela, não conta pra
+  // lógica de soma/edição em si (adicionarOuSomarPedido continua só somando os
+  // 'pendente'). Sem isso, a caixinha de quantidade fica em branco depois de salvar
+  // e dá a impressão de que o pedido sumiu, mesmo estando salvo.
+  return itensPedido
+    .filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.categoria===cat&&i.produto===produto)
+    .reduce((s,i)=>s+(parseFloat(i.qtd)||0),0);
+}
 function renderTabelaGrid(){
   const cat=currentCatTab;
   el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
@@ -2728,8 +2738,9 @@ function renderTabelaGrid(){
       const dt=tabelaDraftTipo[cat][p]||padrao.tipo;
       const du=tabelaDraftUnid[cat][p]||padrao.unidPorCaixa||'';
       const hasQ=parseFloat(d)>0;
+      const jaPedido=qtdJaPedida(cat,p);
       return`<tr class="${hasQ?'has-qty':''}">
-        <td style="font-size:13px;">${p}</td>
+        <td style="font-size:13px;">${p}${jaPedido>0?`<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:1px;">✓ ${jaPedido} já pedido${jaPedido!==1?'s':''} hoje</div>`:''}</td>
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
         <td>
           <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
