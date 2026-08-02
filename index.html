@@ -2596,16 +2596,21 @@ function limparProdutoSelecionado(){
   el('prodSearch').focus();
 }
 
-function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa}){
-  // Se já existe um item pendente igual (mesmo produto/categoria/tipo/un-por-caixa)
-  // pro mesmo dia e loja, soma na quantidade em vez de criar uma linha duplicada.
-  // Só funde com itens 'pendente' — um item já comprado/não-comprado fica intacto.
-  const existente=itensPedido.find(i=>
+function itemPedidoExistente(categoria,produto,tipo,unidPorCaixa){
+  // Acha o item PENDENTE (mesmo produto/categoria/tipo/un-por-caixa, mesma loja/dia)
+  // que representa "quanto já tá pedido pra comprar" desse produto nesse formato.
+  // Só olha 'pendente' — um item já comprado/não-comprado é outra coisa, fica intacto.
+  return itensPedido.find(i=>
     i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='pendente'&&
     i.produto===produto&&i.categoria===categoria&&
     (i.tipo||'unidade')===(tipo||'unidade')&&
     (i.unidPorCaixa||null)===(unidPorCaixa||null)
   );
+}
+function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa}){
+  // Usado pelo fluxo "item por item" (view-lista) — aqui faz sentido continuar somando:
+  // cada "Adicionar ao pedido" é uma ação explícita de adicionar mais uma quantidade.
+  const existente=itemPedidoExistente(categoria,produto,tipo,unidPorCaixa);
   if(existente){
     existente.qtd=(parseFloat(existente.qtd)||0)+qtd;
     syncPedidoUpdate(existente);
@@ -2719,28 +2724,24 @@ function switchCatTabela(cat){
   try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao montar a tabela: '));}
   atualizarStickySave();
 }
-function qtdJaPedida(cat,produto){
-  // Soma tudo que já foi lançado nesse dia/loja pra esse produto (pendente, comprado
-  // ou não-comprado) — usado só pra exibir "já pedido hoje" na tabela, não conta pra
-  // lógica de soma/edição em si (adicionarOuSomarPedido continua só somando os
-  // 'pendente'). Sem isso, a caixinha de quantidade fica em branco depois de salvar
-  // e dá a impressão de que o pedido sumiu, mesmo estando salvo.
-  return itensPedido
-    .filter(i=>i.lojaId===currentLojaId&&i.data===currentDate&&i.categoria===cat&&i.produto===produto)
-    .reduce((s,i)=>s+(parseFloat(i.qtd)||0),0);
-}
 function renderTabelaGrid(){
   const cat=currentCatTab;
   el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
-      const d=tabelaDraft[cat][p]||'';
       const padrao=produtoPadrao(cat,p);
       const dt=tabelaDraftTipo[cat][p]||padrao.tipo;
       const du=tabelaDraftUnid[cat][p]||padrao.unidPorCaixa||'';
+      const unidNum=tipoTemSubQtd(dt)?(parseInt(du)||null):null;
+      const existente=itemPedidoExistente(cat,p,dt,unidNum);
+      const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
+      // A caixinha sempre mostra o total pendente de verdade (não um rascunho que some
+      // depois de salvar) — editar e salvar SUBSTITUI esse total, não soma em cima dele.
+      // tabelaDraft só entra quando o campo já foi digitado nessa sessão (inclusive pra
+      // permitir zerar/apagar).
+      const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:(jaPedido>0?jaPedido:'');
       const hasQ=parseFloat(d)>0;
-      const jaPedido=qtdJaPedida(cat,p);
       return`<tr class="${hasQ?'has-qty':''}">
-        <td style="font-size:13px;">${p}${jaPedido>0?`<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:1px;">✓ ${jaPedido} já pedido${jaPedido!==1?'s':''} hoje</div>`:''}</td>
+        <td style="font-size:13px;">${p}</td>
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
         <td>
           <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
@@ -2766,12 +2767,44 @@ function updateUnidCell(i,cat,p){
   if(tipo==='unidade'){unidInp.style.opacity='.3';unidInp.style.pointerEvents='none';unidInp.value='';tabelaDraftUnid[cat][p]='';}
   else{unidInp.style.opacity='1';unidInp.style.pointerEvents='';}
 }
-function updateSalvarLabel(){let t=0;Object.keys(PRODUTOS).forEach(c=>PRODUTOS[c].forEach(p=>{if(parseFloat(tabelaDraft[c][p])>0)t++;}));el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';}
+function updateSalvarLabel(){
+  // Conta só o que realmente mudou (difere do que já tá salvo como pendente) — como a
+  // caixinha agora fica preenchida com o total já pedido (não volta a ficar em branco
+  // depois de salvar), contar toda célula com valor>0 inflaria esse número pra sempre.
+  let t=0;
+  Object.keys(PRODUTOS).forEach(c=>PRODUTOS[c].forEach(p=>{
+    const draftVal=tabelaDraft[c][p];
+    if(draftVal===undefined||draftVal==='')return;
+    const qtd=parseFloat(draftVal)||0;
+    const tipo=tabelaDraftTipo[c][p]||produtoPadrao(c,p).tipo;
+    const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[c][p])||null):null;
+    const existente=itemPedidoExistente(c,p,tipo,unid);
+    const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
+    if(qtd!==jaPedido)t++;
+  }));
+  el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';
+}
 function salvarTabela(){
   saveDraftFromDOM();let n=0;
-  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{const qtd=parseFloat(tabelaDraft[cat][p])||0;if(qtd>0){const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid});tabelaDraft[cat][p]='';tabelaDraftTipo[cat][p]='';tabelaDraftUnid[cat][p]='';n++;}});});
+  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{
+    const draftVal=tabelaDraft[cat][p];
+    if(draftVal===undefined||draftVal==='')return; // célula não foi tocada nessa sessão
+    const qtd=parseFloat(draftVal)||0;
+    const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;
+    const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;
+    const existente=itemPedidoExistente(cat,p,tipo,unid);
+    const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
+    if(qtd===jaPedido)return; // sem mudança de verdade
+    if(qtd<=0){
+      if(existente){itensPedido=itensPedido.filter(i=>i.id!==existente.id);syncPedidoDelete(existente.id);n++;}
+      return;
+    }
+    if(existente){existente.qtd=qtd;syncPedidoUpdate(existente);}
+    else adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid});
+    n++;
+  });});
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
-  if(n>0)showToast(`${n} iten${n===1?'':'s'} adicionado${n===1?'':'s'}!`);
+  if(n>0)showToast(`${n} iten${n===1?'':'s'} atualizado${n===1?'':'s'}!`);
 }
 function renderPedidoTabela(){
   const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate);
