@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html lang="pt-BR" data-theme="dark">
 <head>
+<script>
+// Aplica o tema o mais cedo possível, antes de qualquer coisa renderizar — sem
+// isso, a página sempre nasce escura (padrão fixo no <html> acima) e só corrige
+// pro tema salvo depois que a sessão/login termina de carregar (rede + Supabase),
+// o que em conexão ruim é visível e demorado. Nesse intervalo o usuário via a tela
+// escura, achava que a preferência não tinha sido salva e trocava de novo na mão —
+// mesmo com o valor certo já salvo. loadTheme() (mais abaixo) continua rodando
+// depois do login pra aplicar a preferência ESPECÍFICA daquele usuário (chave
+// isolada por conta); esse script aqui é só um chute rápido baseado no último
+// tema usado NESSE aparelho, pra eliminar o pisca-pisca visual.
+try{
+  var t=localStorage.getItem('ceasa_theme_last');
+  if(t)document.documentElement.dataset.theme=t;
+}catch(e){}
+</script>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Hortiz</title>
@@ -1569,7 +1584,10 @@ function showToast(msg){const t=el('toast');t.textContent=msg;t.classList.add('s
 function toggleTheme(){
   const theme=el('darkToggle').checked?'dark':'light';
   document.documentElement.dataset.theme=theme;
-  try{localStorage.setItem(chaveLS('ceasa_theme'),theme);}catch(e){}
+  try{
+    localStorage.setItem(chaveLS('ceasa_theme'),theme);
+    localStorage.setItem('ceasa_theme_last',theme); // chute rápido pra próxima carga da página, ver script no <head>
+  }catch(e){}
   if(corDestaqueAtual)aplicarCorDestaque(corDestaqueAtual);
 }
 function loadTheme(){
@@ -1577,6 +1595,7 @@ function loadTheme(){
     const saved=localStorage.getItem(chaveLS('ceasa_theme'));
     if(saved){
       document.documentElement.dataset.theme=saved;
+      localStorage.setItem('ceasa_theme_last',saved);
       const tog=el('darkToggle');
       if(tog)tog.checked=(saved==='dark');
     }
