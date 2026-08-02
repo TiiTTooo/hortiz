@@ -1585,9 +1585,20 @@ function toggleTheme(){
   const theme=el('darkToggle').checked?'dark':'light';
   document.documentElement.dataset.theme=theme;
   try{
-    localStorage.setItem(chaveLS('ceasa_theme'),theme);
+    const chave=chaveLS('ceasa_theme');
+    localStorage.setItem(chave,theme);
     localStorage.setItem('ceasa_theme_last',theme); // chute rápido pra próxima carga da página, ver script no <head>
-  }catch(e){}
+    // Confere se realmente gravou (alguns navegadores — modo privado, "impedir
+    // rastreamento entre sites" em certas configs — aceitam o setItem sem erro
+    // mas não persistem nada). Sem essa checagem, uma falha assim é 100%
+    // silenciosa: a tela muda na hora (linha acima), mas não volta a abrir
+    // nesse tema depois, e ninguém percebe o motivo.
+    if(localStorage.getItem(chave)!==theme){
+      showToast('Tema mudou aqui, mas o navegador não deixou salvar a preferência — pode voltar a abrir escuro da próxima vez. Se estiver em aba anônima/privada, isso é esperado.');
+    }
+  }catch(e){
+    showToast('Tema mudou aqui, mas não deu pra salvar a preferência nesse navegador — pode voltar a abrir escuro da próxima vez.');
+  }
   if(corDestaqueAtual)aplicarCorDestaque(corDestaqueAtual);
 }
 function loadTheme(){
