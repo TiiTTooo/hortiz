@@ -1600,6 +1600,17 @@ function toggleTheme(){
     showToast('Tema mudou aqui, mas não deu pra salvar a preferência nesse navegador — pode voltar a abrir escuro da próxima vez.');
   }
   if(corDestaqueAtual)aplicarCorDestaque(corDestaqueAtual);
+  salvarTemaNoBanco(theme);
+}
+async function salvarTemaNoBanco(theme){
+  // Grava na conta (perfis.tema) pra acompanhar o usuário em qualquer navegador/
+  // aparelho — o localStorage acima é só cache local pra aplicar instantâneo sem
+  // esperar rede na próxima carga da página.
+  if(!currentUser)return;
+  try{
+    const {error}=await db.from('perfis').update({tema:theme}).eq('id',currentUser.id);
+    if(error)showToast(traduzErro(error,'Tema salvo só nesse navegador (não sincronizou com a conta): '));
+  }catch(e){}
 }
 function loadTheme(){
   try{
@@ -1667,6 +1678,16 @@ function setAccent(i){
   }catch(e){
     showToast(`Cor "${c.name}" aplicada (não foi possível salvar: ${e.message})`);
   }
+  salvarCorNoBanco(c.hex);
+}
+async function salvarCorNoBanco(hex){
+  // Grava na conta (perfis.cor_destaque), mesmo padrão do tema — acompanha o
+  // usuário em qualquer navegador/aparelho, não só no que escolheu por último.
+  if(!currentUser)return;
+  try{
+    const {error}=await db.from('perfis').update({cor_destaque:hex}).eq('id',currentUser.id);
+    if(error)showToast(traduzErro(error,'Cor salva só nesse navegador (não sincronizou com a conta): '));
+  }catch(e){}
 }
 function openSettings(){
   el('settingsModal').classList.add('open');
@@ -1854,6 +1875,14 @@ async function carregarPerfilEEntrar(userId){
     isAdmin: perfil.is_admin,
     cpf: perfil.cpf
   };
+  // Tema e cor de destaque agora são preferência de conta (perfis.tema/cor_destaque),
+  // não só do navegador — sincroniza pro cache local ANTES de loadTheme()/
+  // initColorSwatches() lerem, pra funcionar igual em qualquer navegador/aparelho
+  // que essa conta usar, não só naquele em que a pessoa escolheu por último.
+  try{
+    if(perfil.tema)localStorage.setItem(chaveLS('ceasa_theme'),perfil.tema);
+    if(perfil.cor_destaque)localStorage.setItem(chaveLS('ceasa_accent'),perfil.cor_destaque);
+  }catch(e){}
   loadTheme(); // recarrega o tema já escopado por este usuário específico (não o do último que usou o aparelho)
   if(perfil.lojas){
     // garante que a loja do usuário está na lista local
