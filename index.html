@@ -3708,7 +3708,7 @@ async function renderUsuarios(){
     // linhas de loja_membros dele, não só a loja "ativa" (perfis.loja_id). "Apenas
     // pedidos" e "comprador" continuam de loja única / vínculo próprio, sem mudança.
     const idsGerentesManager=gerentesCache.filter(g=>g.role==='manager').map(g=>g.id);
-    let lojasPorGerente={};
+    lojasPorGerente={};
     if(idsGerentesManager.length){
       const {data:membros}=await db.from('loja_membros').select('user_id,loja_id').eq('role','manager').in('user_id',idsGerentesManager);
       (membros||[]).forEach(m=>{(lojasPorGerente[m.user_id]=lojasPorGerente[m.user_id]||[]).push(m.loja_id);});
@@ -3725,7 +3725,7 @@ async function renderUsuarios(){
       const lojasDele=ehManager?(lojasPorGerente[g.id]||[g.loja_id]):[];
       const nomesLojasDele=lojasDele.map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
       const checklistLojas=ehManager?lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
-          <input type="checkbox" ${lojasDele.includes(l.id)?'checked':''} onchange="toggleLojaGerente('${g.id}',${l.id},this.checked)"> ${esc(l.nome)}
+          <input type="checkbox" ${lojasDele.includes(l.id)?'checked':''} onchange="toggleLojaGerente('${g.id}',${l.id},this.checked,this)"> ${esc(l.nome)}
         </label>`).join(''):'';
       html+=`<div class="data-card">
         <div style="display:flex;flex-direction:column;gap:2px;">
@@ -3759,6 +3759,7 @@ async function renderUsuarios(){
   }catch(e){cont.innerHTML='<div class="empty">Erro ao carregar equipe.</div>';}
 }
 let gerentesCache=[];
+let lojasPorGerente={};
 async function moverGerente(id,direcao){
   const idx=gerentesCache.findIndex(g=>g.id===id);
   const outroIdx=idx+direcao;
@@ -3803,19 +3804,39 @@ async function reatribuirGerente(perfilId,novaLojaId){
     renderUsuarios();
   }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
-async function toggleLojaGerente(perfilId,lojaId,marcado){
+async function toggleLojaGerente(perfilId,lojaId,marcado,checkboxEl){
+  // Importante: NÃO chama renderUsuarios() aqui. Ele reconstrói a lista inteira de
+  // Equipe (e passa por um "Carregando…" no meio do caminho) — feito a cada
+  // checkbox clicado, isso pisca a tela inteira e dá a impressão de que a página
+  // recarregou e perdeu a seleção, mesmo quando o clique funcionou. Em vez disso,
+  // atualiza só o estado local (lojasPorGerente) e o textinho-resumo desse gerente.
+  if(checkboxEl)checkboxEl.disabled=true;
   try{
     if(marcado){
       const {error}=await db.rpc('conceder_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
-      if(error){showToast(traduzErro(error,'Erro ao liberar loja: '));renderUsuarios();return;}
+      if(error){showToast(traduzErro(error,'Erro ao liberar loja: '));if(checkboxEl)checkboxEl.checked=false;return;}
       showToast('Loja liberada pro gerente!');
+      const arr=lojasPorGerente[perfilId]=lojasPorGerente[perfilId]||[];
+      if(!arr.includes(lojaId))arr.push(lojaId);
     }else{
       const {error}=await db.rpc('revogar_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
-      if(error){showToast(traduzErro(error,'Erro ao remover acesso: '));renderUsuarios();return;}
+      if(error){showToast(traduzErro(error,'Erro ao remover acesso: '));if(checkboxEl)checkboxEl.checked=true;return;}
       showToast('Acesso a essa loja removido.');
+      if(lojasPorGerente[perfilId])lojasPorGerente[perfilId]=lojasPorGerente[perfilId].filter(id=>id!==lojaId);
     }
-    renderUsuarios();
-  }catch(e){showToast(traduzErro(e,'Erro: '));renderUsuarios();}
+    const txtEl=el('gerLojaTxt-'+perfilId);
+    if(txtEl){
+      const nomes=(lojasPorGerente[perfilId]||[]).map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
+      const g=gerentesCache.find(x=>x.id===perfilId);
+      const lojaNomeAtiva=(lojas.find(l=>l.id===(g&&g.loja_id))||{}).nome||'—';
+      txtEl.textContent=nomes||lojaNomeAtiva;
+    }
+  }catch(e){
+    showToast(traduzErro(e,'Erro: '));
+    if(checkboxEl)checkboxEl.checked=!marcado;
+  }finally{
+    if(checkboxEl)checkboxEl.disabled=false;
+  }
 }
 async function removerVinculoComprador(perfilId,lojaId,nome){
   if(!confirm('Desvincular "'+nome+'" dessa loja como comprador? Ele continua com acesso às outras lojas onde também é comprador.'))return;
