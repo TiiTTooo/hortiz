@@ -492,11 +492,14 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <div style="display:flex;gap:8px;margin-bottom:.5rem;flex-wrap:wrap;">
               <select id="tipoPlan" onchange="onTipoPlanChange()" style="flex:1;min-width:130px;">
                 <option value="caixa">📦 Caixa</option>
+                <option value="saco">🛍️ Saco</option>
+                <option value="maco">🌿 Maço</option>
+                <option value="pacote">🎁 Pacote</option>
                 <option value="unidade" selected>🔢 Unidade</option>
               </select>
               <div id="unidCaixaWrap" style="flex:1;min-width:140px;position:relative;">
-                <input id="unidPorCaixa" type="number" placeholder="Unidades por caixa (opcional)" step="1" min="1" style="padding-right:2.5rem;"/>
-                <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3);">un/cx</span>
+                <input id="unidPorCaixa" type="number" placeholder="Unidades por embalagem (opcional)" step="1" min="1" style="padding-right:2.5rem;"/>
+                <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3);">un/emb</span>
               </div>
             </div>
             <button class="btn-primary" onclick="addPedido()"><i class="ti ti-plus"></i> Adicionar ao pedido</button>
@@ -1010,11 +1013,14 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <div style="display:flex;gap:8px;margin-bottom:.625rem;flex-wrap:wrap;">
               <select id="novoProdutoTipo" onchange="onNovoProdutoTipoChange()" style="flex:1;min-width:130px;">
                 <option value="caixa" selected>📦 Padrão: Caixa</option>
+                <option value="saco">🛍️ Padrão: Saco</option>
+                <option value="maco">🌿 Padrão: Maço</option>
+                <option value="pacote">🎁 Padrão: Pacote</option>
                 <option value="unidade">🔢 Padrão: Unidade</option>
               </select>
               <div id="novoProdutoUnidCxWrap" style="flex:1;min-width:140px;position:relative;">
-                <input id="novoProdutoUnidCx" type="number" placeholder="Unidades por caixa (opcional)" step="1" min="1" style="padding-right:2.5rem;"/>
-                <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3);">un/cx</span>
+                <input id="novoProdutoUnidCx" type="number" placeholder="Unidades por embalagem (opcional)" step="1" min="1" style="padding-right:2.5rem;"/>
+                <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3);">un/emb</span>
               </div>
             </div>
             <div style="display:flex;gap:.5rem;">
@@ -1316,9 +1322,12 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
     <div class="modal-head"><span class="modal-title" id="produtosSetupTitulo"><i class="ti ti-apple"></i> Base de produtos da loja</span></div>
     <p id="produtosSetupProgresso" style="font-size:11px;color:var(--text3);margin:-.5rem 0 .75rem;"></p>
     <div id="produtosSetupTipoPadraoWrap" style="display:none;margin-bottom:.875rem;padding:.625rem .75rem;background:var(--bg3);border-radius:var(--radius-sm);">
-      <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:.375rem;">Esses produtos entram como padrão caixa ou unidade?</label>
+      <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:.375rem;">Esses produtos entram como padrão caixa, saco, maço, pacote ou unidade?</label>
       <select id="produtosSetupTipoPadrao" style="width:100%;">
         <option value="caixa">📦 Caixa</option>
+        <option value="saco">🛍️ Saco</option>
+        <option value="maco">🌿 Maço</option>
+        <option value="pacote">🎁 Pacote</option>
         <option value="unidade">🔢 Unidade</option>
       </select>
       <p style="font-size:11px;color:var(--text3);margin-top:.375rem;">Dá pra mudar depois, produto por produto, em Gerenciar → Produtos.</p>
@@ -2520,7 +2529,7 @@ function populateFornecedores(cId,lId){const cat=el(cId).value;const lista=typeo
 /* ── PEDIDO ── */
 function onTipoPlanChange(){
   const tipo=el('tipoPlan').value;
-  el('unidCaixaWrap').style.display=tipo==='caixa'?'':'none';
+  el('unidCaixaWrap').style.display=tipoTemSubQtd(tipo)?'':'none';
 }
 function onProdPlanChange(){
   const cat=el('catPlan').value,prod=el('prodPlan').value;
@@ -2610,7 +2619,7 @@ function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa}){
 function addPedido(){
   const qtd=parseFloat((el('qtdPlan').value||'').replace(',','.'))||0;if(qtd<=0)return;
   const tipo=el('tipoPlan').value;
-  const unid=tipo==='caixa'?(parseInt(el('unidPorCaixa').value)||null):null;
+  const unid=tipoTemSubQtd(tipo)?(parseInt(el('unidPorCaixa').value)||null):null;
   adicionarOuSomarPedido({produto:el('prodPlan').value,categoria:el('catPlan').value,qtd,tipo,unidPorCaixa:unid});
   el('qtdPlan').value='';el('unidPorCaixa').value='';
   renderHistorico();renderPedido();renderPendentes();renderPedidoTabela();
@@ -2626,13 +2635,13 @@ function compraVinculada(itemPedidoId){
   return compras.find(c=>c.itemPedidoId===itemPedidoId);
 }
 function metaPedidoComCompra(p){
-  const unit=p.tipo==='caixa'?'cx':'un';
+  const unit=tipoAbrev(p.tipo);
   let txt=`${p.qtd} ${unit} previsto`;
   if(p.status==='comprado'){
     const c=compraVinculada(p.id);
     if(c)txt+=` · ${c.qtd} ${unit} comprado${c.valorUnit?` (R$ ${c.valorUnit.toFixed(2).replace('.',',')})`:''}`;
   }
-  return txt+`${p.unidPorCaixa?` · ${p.unidPorCaixa} un/cx`:''} · ${labelCat(p.categoria)}`;
+  return txt+`${p.unidPorCaixa?` · ${p.unidPorCaixa} un/emb`:''} · ${labelCat(p.categoria)}`;
 }
 function renderPedido(){
   const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate);
@@ -2685,7 +2694,7 @@ function saveEditPedido(id,tabela){
   item.produto=el(pre+'prod-'+id).value;
   item.qtd=Math.round(parseFloat((el(pre+'qtd-'+id).value||'').replace(',','.'))||item.qtd);
   const tipoEl=el(pre+'tipo-'+id);if(tipoEl)item.tipo=tipoEl.value;
-  const unidEl=el(pre+'unid-'+id);if(unidEl)item.unidPorCaixa=(item.tipo==='caixa'?(parseInt(unidEl.value)||null):null);
+  const unidEl=el(pre+'unid-'+id);if(unidEl)item.unidPorCaixa=(tipoTemSubQtd(item.tipo)?(parseInt(unidEl.value)||null):null);
   syncPedidoUpdate(item);
   renderPedido();renderPendentes();renderPedidoTabela();showToast('Item atualizado!');
 }
@@ -2712,7 +2721,7 @@ function switchCatTabela(cat){
 }
 function renderTabelaGrid(){
   const cat=currentCatTab;
-  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/cx</th></tr></thead><tbody>`+
+  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
       const d=tabelaDraft[cat][p]||'';
       const padrao=produtoPadrao(cat,p);
@@ -2724,11 +2733,10 @@ function renderTabelaGrid(){
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
         <td>
           <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
-            <option value="caixa"${dt==='caixa'?' selected':''}>📦 Caixa</option>
-            <option value="unidade"${dt==='unidade'?' selected':''}>🔢 Unidade</option>
+            ${tipoOptionsHtml(dt)}
           </select>
         </td>
-        <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/cx" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/></td>
+        <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/></td>
       </tr>`;
     }).join('')+`</tbody>`;
 }
@@ -2750,7 +2758,7 @@ function updateUnidCell(i,cat,p){
 function updateSalvarLabel(){let t=0;Object.keys(PRODUTOS).forEach(c=>PRODUTOS[c].forEach(p=>{if(parseFloat(tabelaDraft[c][p])>0)t++;}));el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';}
 function salvarTabela(){
   saveDraftFromDOM();let n=0;
-  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{const qtd=parseFloat(tabelaDraft[cat][p])||0;if(qtd>0){const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;const unid=tipo==='caixa'?(parseInt(tabelaDraftUnid[cat][p])||null):null;adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid});tabelaDraft[cat][p]='';tabelaDraftTipo[cat][p]='';tabelaDraftUnid[cat][p]='';n++;}});});
+  Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{const qtd=parseFloat(tabelaDraft[cat][p])||0;if(qtd>0){const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid});tabelaDraft[cat][p]='';tabelaDraftTipo[cat][p]='';tabelaDraftUnid[cat][p]='';n++;}});});
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
   if(n>0)showToast(`${n} iten${n===1?'':'s'} adicionado${n===1?'':'s'}!`);
 }
@@ -2776,10 +2784,9 @@ function renderPedidoTabela(){
         <select id="ept-prod-${p.id}" style="flex:2;min-width:140px;"></select>
         <input type="number" step="1" min="0" value="${p.qtd}" id="ept-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;" oninput="this.value=Math.round(+this.value)||''"/>
         <select id="ept-tipo-${p.id}" style="flex:1;min-width:110px;" onchange="onEditTipoChange(${p.id},true)">
-          <option value="caixa"${(p.tipo||'caixa')==='caixa'?' selected':''}>📦 Caixa</option>
-          <option value="unidade"${p.tipo==='unidade'?' selected':''}>🔢 Unidade</option>
+          ${tipoOptionsHtml(p.tipo||'caixa')}
         </select>
-        <input type="number" step="1" min="1" value="${p.unidPorCaixa||''}" id="ept-unid-${p.id}" placeholder="un/cx" style="flex:1;min-width:80px;${p.tipo==='unidade'?'opacity:.3;pointer-events:none':''}"/>
+        <input type="number" step="1" min="1" value="${p.unidPorCaixa||''}" id="ept-unid-${p.id}" placeholder="un/emb" style="flex:1;min-width:80px;${p.tipo==='unidade'?'opacity:.3;pointer-events:none':''}"/>
         <button class="btn-primary" onclick="saveEditPedido(${p.id},true)" style="width:100%;margin-top:2px;"><i class="ti ti-device-floppy"></i> Salvar</button>
       </div>`:''}
     </div>`).join(''):'';
@@ -2830,7 +2837,7 @@ function itemPendenteCatHtml(p){
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;">
           <div>
             <div style="font-size:14px;font-weight:700;">${esc(p.produto)}</div>
-            <div style="font-size:13px;color:var(--text2);margin-top:2px;">${p.qtd} ${p.tipo==='caixa'?'caixa':'unidade'}${p.qtd!==1?'s':''} previsto${p.unidPorCaixa?' · '+p.unidPorCaixa+' un/cx':''}</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px;">${p.qtd} ${tipoLabel(p.tipo).toLowerCase()}${p.qtd!==1?'s':''} previsto${p.unidPorCaixa?' · '+p.unidPorCaixa+' un/emb':''}</div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.4rem;">
@@ -2937,7 +2944,7 @@ function renderPendentes(){
       <div class="item-head" style="margin-bottom:.625rem;">
         <div>
           <div class="item-title" style="font-size:16px;font-weight:700;">${esc(p.produto)}</div>
-          <div class="item-meta" style="font-size:14px;font-weight:600;margin-top:3px;color:var(--text);">${p.qtd} ${p.tipo==='caixa'?'caixa':'unidade'}${p.qtd!==1?'s':''} previsto · <span style="color:var(--text2)">${labelCat(p.categoria)}</span></div>
+          <div class="item-meta" style="font-size:14px;font-weight:600;margin-top:3px;color:var(--text);">${p.qtd} ${tipoLabel(p.tipo).toLowerCase()}${p.qtd!==1?'s':''} previsto · <span style="color:var(--text2)">${labelCat(p.categoria)}</span></div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
@@ -2989,7 +2996,7 @@ function confirmPendente(id){
   const forn=el('pf-forn'+suf+id).value.trim()||'Sem fornecedor';
   p.status='comprado';
   syncPedidoUpdate(p);
-  const custoUn=(p.unidPorCaixa&&p.tipo==='caixa')?val/p.unidPorCaixa:val;
+  const custoUn=(p.unidPorCaixa&&tipoTemSubQtd(p.tipo))?val/p.unidPorCaixa:val;
   const novaCompra={id:nextCompraId++,produto:p.produto,categoria:p.categoria,qtd,valorUnit:val,custoUnitario:custoUn,tipo:p.tipo||'caixa',unidPorCaixa:p.unidPorCaixa||null,fornecedor:forn,pagamento:el('pf-pag'+suf+id).value,planejado:true,lojaId:currentLojaId,data:currentDate,itemPedidoId:p.id};
   compras.push(novaCompra);
   syncCompraInsert(novaCompra, p.id);
@@ -4090,7 +4097,7 @@ function exportarConferenciaEntregaPdf(){
         labelCat(i.categoria),
         i.produto,
         compra?compra.fornecedor||'-':'-',
-        String(i.qtd)+(i.tipo==='caixa'?' cx':' un'),
+        String(i.qtd)+' '+tipoAbrev(i.tipo),
         '',
         ''
       ];
@@ -5314,7 +5321,7 @@ async function exportarRelatorioCompradorPdf(){
       doc.setTextColor(0);
       doc.setFontSize(13);
       doc.text(loja.nome,14,36);
-      const body=itensLoja.map(i=>[labelCat(i.categoria,categoriasConsolidado),i.produto,String(i.qtd)+(i.tipo==='caixa'?' cx':' un')]);
+      const body=itensLoja.map(i=>[labelCat(i.categoria,categoriasConsolidado),i.produto,String(i.qtd)+' '+tipoAbrev(i.tipo)]);
       doc.autoTable({
         startY:40,
         head:[['Categoria','Produto','Qtd']],
@@ -5371,7 +5378,7 @@ async function exportarPedidoConsolidadoTotalPdf(){
     doc.setFontSize(9);
     const resumoTxt=Object.keys(contagem).map(c=>labelCat(c)+': '+contagem[c]).join('    ·    ');
     doc.text(resumoTxt,14,34,{maxWidth:180});
-    const body=linhas.map(l=>[labelCat(l.categoria),l.produto,String(l.total)+(l.tipo==='caixa'?' cx':' un'),String(l.lojasSet.size)]);
+    const body=linhas.map(l=>[labelCat(l.categoria),l.produto,String(l.total)+' '+tipoAbrev(l.tipo),String(l.lojasSet.size)]);
     doc.autoTable({
       startY:42,
       head:[['Categoria','Produto','Qtd total','Lojas']],
@@ -5406,7 +5413,7 @@ async function renderComprasComprador(){
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.375rem;">
           <div>
             <div style="font-size:14px;font-weight:700;">${esc(l.produto)}</div>
-            <div style="font-size:13px;color:var(--text2);margin-top:2px;">${l.total} ${l.tipo==='caixa'?'caixa':'unidade'}${l.total!==1?'s':''} previsto · ${l.origens.length} loja${l.origens.length!==1?'s':''}</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px;">${l.total} ${tipoLabel(l.tipo).toLowerCase()}${l.total!==1?'s':''} previsto · ${l.origens.length} loja${l.origens.length!==1?'s':''}</div>
           </div>
         </div>
         <a href="#" onclick="event.preventDefault();toggleDetalheComprador(${idx})" style="font-size:11px;color:var(--text2);text-decoration:underline;">ver por loja</a>
@@ -5493,7 +5500,7 @@ async function confirmarCompraComprador(idx){
       const itemLocal=itensPedido.find(p=>p.id===origem.itemId);
       if(itemLocal){
         itemLocal.status='comprado';
-        const custoUn=(itemLocal.unidPorCaixa&&itemLocal.tipo==='caixa')?valorUnit/itemLocal.unidPorCaixa:valorUnit;
+        const custoUn=(itemLocal.unidPorCaixa&&tipoTemSubQtd(itemLocal.tipo))?valorUnit/itemLocal.unidPorCaixa:valorUnit;
         compras.push({
           id:insData?.id??nextCompraId++,produto:linha.produto,categoria:linha.categoria,
           qtd:qtdDestaLoja,valorUnit,custoUnitario:custoUn,tipo:itemLocal.tipo||'caixa',
@@ -5640,7 +5647,7 @@ function renderGerenciarProdutosLista(){
     </div>`:''}
     <div style="flex:1;min-width:0;">
       <p style="font-size:14px;font-weight:600;">${emojiCat(p.categoria)} ${esc(p.nome)}</p>
-      <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'} · ${p.tipo==='unidade'?'🔢 un':'📦 cx'}${p.unid_por_caixa?' · '+p.unid_por_caixa+' un/cx':''}</p>
+      <p style="font-size:12px;color:var(--text2);">${p.ativo?'Ativo':'Desativado'} · ${tipoEmoji(p.tipo||'caixa')} ${tipoAbrev(p.tipo||'caixa')}${p.unid_por_caixa?' · '+p.unid_por_caixa+' un/emb':''}</p>
     </div>
     <button class="btn-ghost btn-sm" onclick="editProduto(${p.id},'${esc(escJs(p.nome))}','${p.categoria}','${p.tipo||'caixa'}',${p.unid_por_caixa||'null'})" title="Editar"><i class="ti ti-edit"></i></button>
     <button class="btn-ghost btn-sm" onclick="alternarProdutoAtivo(${p.id},${!p.ativo})" title="${p.ativo?'Desativar':'Reativar'}"><i class="ti ti-${p.ativo?'eye-off':'eye'}"></i></button>
@@ -5704,7 +5711,7 @@ async function adicionarProduto(){
   const nome=el('novoProdutoNome').value.trim();
   const categoria=el('novoProdutoCategoria').value;
   const tipo=el('novoProdutoTipo').value;
-  const unidPorCaixa=tipo==='caixa'?(parseInt(el('novoProdutoUnidCx').value)||null):null;
+  const unidPorCaixa=tipoTemSubQtd(tipo)?(parseInt(el('novoProdutoUnidCx').value)||null):null;
   if(!nome){showToast('Digite o nome do produto');return;}
   try{
     if(editingProdutoId!==null){
