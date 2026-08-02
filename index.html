@@ -1365,9 +1365,27 @@ let PRODUTOS={
   legume:[...CATALOGO_PADRAO.legume],
   verdura:[...CATALOGO_PADRAO.verdura]
 };
-// Padrão de tipo (caixa/unidade) e un/cx cadastrado por produto em Gerenciar Produtos.
+// Padrão de tipo (caixa/saco/maço/pacote/unidade) e un/embalagem cadastrado por produto em Gerenciar Produtos.
 // PRODUTO_INFO[categoria][nome] = {tipo, unidPorCaixa}
 let PRODUTO_INFO={};
+// Tipos de compra: 'unidade' é o único indivisível — os demais aceitam
+// um "unidades por embalagem" opcional (usado no custo por unidade).
+const TIPO_INFO={
+  caixa:{label:'Caixa',plural:'caixas',abrev:'cx',emoji:'📦'},
+  saco:{label:'Saco',plural:'sacos',abrev:'sc',emoji:'🛍️'},
+  maco:{label:'Maço',plural:'maços',abrev:'mç',emoji:'🌿'},
+  pacote:{label:'Pacote',plural:'pacotes',abrev:'pct',emoji:'🎁'},
+  unidade:{label:'Unidade',plural:'unidades',abrev:'un',emoji:'🔢'}
+};
+function tipoInfo(tipo){return TIPO_INFO[tipo]||TIPO_INFO.caixa;}
+function tipoTemSubQtd(tipo){return tipo!=='unidade';}
+function tipoAbrev(tipo){return tipoInfo(tipo).abrev;}
+function tipoLabel(tipo){return tipoInfo(tipo).label;}
+function tipoLabelPlural(tipo){return tipoInfo(tipo).plural;}
+function tipoEmoji(tipo){return tipoInfo(tipo).emoji;}
+function tipoOptionsHtml(selecionado){
+  return Object.keys(TIPO_INFO).map(t=>`<option value="${t}"${t===selecionado?' selected':''}>${TIPO_INFO[t].emoji} ${TIPO_INFO[t].label}</option>`).join('');
+}
 const FORNECEDORES_PADRAO={fruta:['Agro sul','América','Barão','Bela vista','Betel','Bom Jesus','Box15','Box25','Box48','Brasnica','Welitom','Casa d frutas','Diamante','Dinho','Liberty','Fruto bom','Granada','Boa estrela','Martins','Monte vd'],legume:['Aquilino','Box111','Box113','Bruno','Carvalho','Magaretto','Minas d','Mora b','Neco','Rio Nilo','Sul coco','DP empório','Box226','Canaã'],verdura:['Aquira','Arizona','Carla','Elias','Jacarei','Lucas','Neném','P194','P198','P207','P208','P216','P217','P218','Velho','Baxinho']};
 const FORNECEDORES=FORNECEDORES_PADRAO;
 const DESPESAS_TIPO_PADRAO=['Gelo','Gasolina','Embalagem','Café','Almoço','Carregador','Estacionamento','Frete','Caixa vazia'];
@@ -3668,7 +3686,7 @@ async function renderUsuarios(){
           <p style="font-size:12px;color:var(--text2);">${esc(g.email)}</p>
           <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${ehManager?(nomesLojasDele||lojaNome):lojaNome}</p>
           ${lojas.length>1&&ehPedidos?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
-          ${lojas.length>1&&ehManager?`<div id="gerLojaChk-${g.id}" style="display:none;margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
+          ${lojas.length>1&&ehManager?`<div id="gerLojaChk-${g.id}" style="display:${gerentesEditAbertos.has(g.id)?'block':'none'};margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
         </div>
         ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':'badge-manager',rotulo)}
         ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${ehManager?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
@@ -3706,13 +3724,23 @@ async function moverGerente(id,direcao){
   }catch(e){showToast(traduzErro(e,'Erro ao reordenar: '));}
 }
 
+let gerentesEditAbertos=new Set();
 function toggleEditGerente(perfilId){
   const txt=el('gerLojaTxt-'+perfilId);
   const sel=el('gerLojaSel-'+perfilId);
   const chk=el('gerLojaChk-'+perfilId);
   if(!txt)return;
   if(sel){txt.style.display='none';sel.style.display='';sel.focus();return;}
-  if(chk){chk.style.display=(chk.style.display==='none')?'block':'none';return;}
+  if(chk){
+    // Marca se o painel de checkboxes ficou aberto — renderUsuarios() reconstrói
+    // o HTML inteiro a cada clique numa loja (pra refletir o estado real do banco),
+    // e sem isso o painel fechava sozinho a cada checkbox marcado/desmarcado,
+    // dando a impressão de que não dava pra selecionar mais de uma loja.
+    const abrir=chk.style.display==='none';
+    chk.style.display=abrir?'block':'none';
+    if(abrir)gerentesEditAbertos.add(perfilId);else gerentesEditAbertos.delete(perfilId);
+    return;
+  }
 }
 async function reatribuirGerente(perfilId,novaLojaId){
   // usado só pra "apenas pedidos" (loja única) — gerente usa toggleLojaGerente (multi-loja)
