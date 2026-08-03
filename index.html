@@ -3170,11 +3170,22 @@ function desfazerCompra(id){
   const c=compras.find(x=>x.id===id);if(!c)return;
   // Remove a compra
   compras=compras.filter(x=>x.id!==id);
-  // Remove do priceHistory
-  priceHistory=priceHistory.filter(h=>!(h.produto===c.produto&&h.data===c.data&&h.lojaId===c.lojaId&&h.valor===c.valorUnit));
-  // Se veio de um item de pedido, volta para pendente
-  if(c.planejado){
-    const pedido=itensPedido.find(p=>p.produto===c.produto&&p.data===c.data&&p.lojaId===c.lojaId&&p.status==='comprado');
+  // Reconstrói o priceHistory a partir do que sobrou em compras (é só um cache
+  // derivado, sem id próprio) — antes filtrava por produto+data+valor, o que
+  // apagava também o histórico de OUTRA compra igual (mesmo produto/valor no
+  // mesmo dia, ex: duas compras de 10 caixas da mesma fruta em horários
+  // diferentes), em vez de só a que foi desfeita.
+  priceHistory=compras.map(cc=>({
+    produto:cc.produto,categoria:cc.categoria,data:cc.data,valor:cc.valorUnit,
+    custoUnitario:cc.custoUnitario,fornecedor:cc.fornecedor,lojaId:cc.lojaId
+  }));
+  // Se veio de um item de pedido, volta ESSE item específico (pelo vínculo
+  // item_pedido_id) para pendente — antes achava por produto+data+status
+  // 'comprado', o que podia pegar OUTRO pedido do mesmo produto (ex: duas
+  // compras de 10 caixas da mesma fruta em horários diferentes) e reabrir o
+  // errado, ou os dois, em vez de só o que foi desfeito.
+  if(c.planejado&&c.itemPedidoId){
+    const pedido=itensPedido.find(p=>p.id===c.itemPedidoId);
     if(pedido){pedido.status='pendente';syncPedidoUpdate(pedido);}
   }
   // Remove do banco
