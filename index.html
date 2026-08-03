@@ -2784,12 +2784,18 @@ function onEditCatChange(id,tabela){
 function saveEditPedido(id,tabela){
   const pre=tabela?'ept-':'ep-';
   const item=itensPedido.find(i=>i.id===id);if(!item)return;
-  item.categoria=el(pre+'cat-'+id).value;
+  const novaCategoria=el(pre+'cat-'+id).value;
+  const fornEl=el(pre+'forn-'+id);
+  if(fornEl){
+    const check=fornecedorCadastrado(novaCategoria,fornEl.value);
+    if(!check.ok){showToast(`Fornecedor "${check.nome}" não está cadastrado. Escolha um da lista ou cadastre em Fornecedores.`);return;}
+    item.fornecedor=check.nome||null;
+  }
+  item.categoria=novaCategoria;
   item.produto=el(pre+'prod-'+id).value;
   item.qtd=Math.round(parseFloat((el(pre+'qtd-'+id).value||'').replace(',','.'))||item.qtd);
   const tipoEl=el(pre+'tipo-'+id);if(tipoEl)item.tipo=tipoEl.value;
   const unidEl=el(pre+'unid-'+id);if(unidEl)item.unidPorCaixa=(tipoTemSubQtd(item.tipo)?(parseInt(unidEl.value)||null):null);
-  const fornEl=el(pre+'forn-'+id);if(fornEl)item.fornecedor=fornEl.value.trim()||null;
   syncPedidoUpdate(item);
   renderPedido();renderPendentes();renderPedidoTabela();showToast('Item atualizado!');
 }
@@ -2883,11 +2889,19 @@ function updateSalvarLabel(){
   el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';
 }
 function salvarTabela(){
-  saveDraftFromDOM();let n=0;
+  saveDraftFromDOM();let n=0;const invalidos=[];
   Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{
     const draftVal=tabelaDraft[cat][p];
     const draftForn=tabelaDraftForn[cat]?tabelaDraftForn[cat][p]:undefined;
     if((draftVal===undefined||draftVal==='')&&draftForn===undefined)return; // nada foi tocado nessa sessão
+    // Fornecedor só pode ser um já cadastrado — digitar um nome que não bate com
+    // nenhum cadastro (típico de erro de digitação) não salva esse produto, pra
+    // não espalhar o mesmo fornecedor em vários nomes parecidos.
+    let fornCheck=null;
+    if(draftForn!==undefined){
+      fornCheck=fornecedorCadastrado(cat,draftForn);
+      if(!fornCheck.ok){invalidos.push(`${p} ("${fornCheck.nome}")`);return;}
+    }
     // Match só por produto/categoria (não por tipo/embalagem) — um produto tem UMA
     // linha pendente por dia/loja. Antes, se o tipo padrão do produto tivesse mudado
     // (ou o un/emb salvo fosse diferente), essa busca não achava a linha existente e
@@ -2899,7 +2913,7 @@ function salvarTabela(){
     const qtd=draftVal!==undefined&&draftVal!==''?(parseFloat(draftVal)||0):jaPedido;
     const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;
     const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;
-    const forn=draftForn!==undefined?(draftForn.trim()||null):(existente?(existente.fornecedor||null):null);
+    const forn=fornCheck?(fornCheck.nome||null):(existente?(existente.fornecedor||null):null);
     if(qtd===jaPedido&&existente&&(existente.tipo||'unidade')===(tipo||'unidade')&&(existente.unidPorCaixa||null)===(unid||null)&&(existente.fornecedor||null)===forn)return; // sem mudança de verdade
     if(qtd<=0){
       if(existente){itensPedido=itensPedido.filter(i=>i.id!==existente.id);syncPedidoDelete(existente.id);n++;}
@@ -2911,6 +2925,7 @@ function salvarTabela(){
   });});
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
   if(n>0)showToast(`${n} iten${n===1?'':'s'} atualizado${n===1?'':'s'}!`);
+  if(invalidos.length)showToast(`Fornecedor não cadastrado, não salvo: ${invalidos.join(', ')}`);
 }
 function renderPedidoTabela(){
   const itens=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===currentDate);
@@ -3145,7 +3160,9 @@ function confirmPendente(id){
   const suf=ceasaViewAtual==='categoria'?'-cat-':'-';
   const qtd=parseFloat((el('pf-qtd'+suf+id).value||'').replace(',','.'))||p.qtd;
   const val=parseFloat((el('pf-val'+suf+id).value||'').replace(',','.'))||0;if(val<=0){showToast('Informe o valor antes de confirmar');return;}
-  const forn=el('pf-forn'+suf+id).value.trim()||'Sem fornecedor';
+  const fornCheck=fornecedorCadastrado(p.categoria,el('pf-forn'+suf+id).value);
+  if(!fornCheck.ok){showToast(`Fornecedor "${fornCheck.nome}" não está cadastrado. Escolha um da lista ou cadastre em Fornecedores.`);return;}
+  const forn=fornCheck.nome||'Sem fornecedor';
   p.status='comprado';
   syncPedidoUpdate(p);
   const custoUn=(p.unidPorCaixa&&tipoTemSubQtd(p.tipo))?val/p.unidPorCaixa:val;
@@ -3158,7 +3175,10 @@ function confirmPendente(id){
 function addAvulso(){
   const qtd=parseFloat((el('qtdAvulso').value||'').replace(',','.'))||0;const val=parseFloat((el('valorAvulso').value||'').replace(',','.'))||0;
   if(qtd<=0||val<=0){showToast('Preencha quantidade e valor');return;}
-  const _avulso={id:nextCompraId++,produto:el('prodAvulso').value,categoria:el('catAvulso').value,qtd,valorUnit:val,fornecedor:el('fornAvulso').value.trim()||'Sem fornecedor',pagamento:el('pagAvulso').value,planejado:false,lojaId:currentLojaId,data:currentDate};
+  const catAv=el('catAvulso').value;
+  const fornCheck=fornecedorCadastrado(catAv,el('fornAvulso').value);
+  if(!fornCheck.ok){showToast(`Fornecedor "${fornCheck.nome}" não está cadastrado. Escolha um da lista ou cadastre em Fornecedores.`);return;}
+  const _avulso={id:nextCompraId++,produto:el('prodAvulso').value,categoria:catAv,qtd,valorUnit:val,fornecedor:fornCheck.nome||'Sem fornecedor',pagamento:el('pagAvulso').value,planejado:false,lojaId:currentLojaId,data:currentDate};
   compras.push(_avulso);
   syncCompraInsert(_avulso, null);
   priceHistory.push({produto:_avulso.produto,categoria:_avulso.categoria,data:currentDate,valor:val,fornecedor:_avulso.fornecedor,lojaId:currentLojaId});
@@ -3196,8 +3216,10 @@ function desfazerCompra(id){
 function saveEditCompra(id,pfx){
   pfx=pfx||'ec-';
   const c=compras.find(x=>x.id===id);if(!c)return;
+  const fornCheck=fornecedorCadastrado(c.categoria,el(pfx+'forn-'+id).value);
+  if(!fornCheck.ok){showToast(`Fornecedor "${fornCheck.nome}" não está cadastrado. Escolha um da lista ou cadastre em Fornecedores.`);return;}
   c.qtd=parseFloat((el(pfx+'qtd-'+id).value||'').replace(',','.'))||c.qtd;c.valorUnit=parseFloat((el(pfx+'val-'+id).value||'').replace(',','.'))||c.valorUnit;
-  c.fornecedor=el(pfx+'forn-'+id).value.trim()||c.fornecedor;c.pagamento=el(pfx+'pag-'+id).value;
+  c.fornecedor=fornCheck.nome||c.fornecedor;c.pagamento=el(pfx+'pag-'+id).value;
   syncCompraUpdate(c);
   renderCompras();renderFornecedores();showToast('Alteração salva!');
 }
@@ -3266,6 +3288,19 @@ function renderCompras(){
 /* ── FORNECEDORES ── */
 function getAllFornByCat(cat){
   return [...(fornCustom[cat]||[])].map(fc=>fc.nome).sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
+}
+function fornecedorCadastrado(categoria,nomeDigitado){
+  // Os campos de fornecedor são input+datalist (digita pra buscar), mas isso não
+  // IMPEDE digitar algo que não está na lista — só sugere. Erros de digitação
+  // (ex: "Pauli frut" vs "Pauli fruti") criavam fornecedores "fantasma" separados,
+  // espalhando o histórico do mesmo fornecedor em vários cards. Essa função valida
+  // que o nome digitado bate (sem diferenciar maiúsc/minúsc) com algum já cadastrado
+  // nessa categoria, e devolve o nome com a grafia EXATA cadastrada — pra não
+  // divergir por causa de acento/maiúscula digitados diferente do cadastro.
+  const nome=(nomeDigitado||'').trim();
+  if(!nome)return{ok:true,nome:''}; // vazio é permitido — vira "Sem fornecedor"
+  const match=getAllFornByCat(categoria).find(f=>f.toLowerCase()===nome.toLowerCase());
+  return match?{ok:true,nome:match}:{ok:false,nome};
 }
 function populateFornecedoresAll(cId,lId){
   const cat=el(cId).value;
