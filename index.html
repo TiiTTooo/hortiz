@@ -2867,22 +2867,22 @@ function renderTabelaGrid(){
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
       </tr>${aberto?`<tr class="tabela-forn-subrow">
         <td colspan="2" style="padding-top:0;background:var(--bg3);">
-          <div style="display:flex;flex-wrap:wrap;gap:10px;padding:6px 0;align-items:flex-end;">
-            <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;gap:10px;padding:6px 0 4px;">
+            <div style="display:flex;flex-direction:column;gap:2px;flex:1;">
               <label style="font-size:10px;color:var(--text3);">Tipo</label>
-              <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
+              <select id="tt_${i}" style="font-size:12px;padding:5px 6px;width:100%;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
                 ${tipoOptionsHtml(dt)}
               </select>
             </div>
-            <div style="display:flex;flex-direction:column;gap:2px;">
+            <div style="display:flex;flex-direction:column;gap:2px;flex:1;">
               <label style="font-size:10px;color:var(--text3);">Un/emb</label>
-              <input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;width:78px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/>
+              <input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;width:100%;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/>
             </div>
-            <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:150px;">
-              <label style="font-size:10px;color:var(--text3);">🚚 Fornecedor</label>
-              <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
-              <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
-            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:0 0 8px;">
+            <label style="font-size:10px;color:var(--text3);">🚚 Fornecedor</label>
+            <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
+            <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
           </div>
         </td>
       </tr>`:''}`;
