@@ -733,13 +733,18 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('categoria')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por categoria</button>
           <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('produto')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por produto</button>
         </div>
-        <!-- Ver um dia específico -->
-        <div class="card" style="margin-bottom:.875rem;">
-          <div class="card-label"><i class="ti ti-calendar-event"></i> Ver um dia específico</div>
-          <input type="date" id="relDiaData" onchange="renderRelDia()" style="width:100%;margin-bottom:.75rem;"/>
-          <div class="stat-grid" style="margin-bottom:.625rem;" id="statGridRelDiaCategoria"></div>
-          <div style="font-size:12px;font-weight:600;color:var(--text2);margin:.5rem 0 .375rem;">Formas de pagamento nesse dia</div>
-          <div class="stat-grid" id="statGridRelDiaPagamento"></div>
+        <!-- Ver um dia específico (recolhido por padrão) -->
+        <div class="card" style="margin-bottom:.875rem;padding:0;overflow:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:.875rem 1.125rem;cursor:pointer;" onclick="toggleRelDia()">
+            <span class="card-label" style="margin:0;"><i class="ti ti-calendar-event"></i> Ver um dia específico</span>
+            <i class="ti ti-chevron-down" id="relDiaChevron" style="font-size:16px;color:var(--text2);transition:transform .2s;"></i>
+          </div>
+          <div id="relDiaBody" style="display:none;padding:0 1.125rem 1rem;">
+            <input type="date" id="relDiaData" onchange="renderRelDia()" style="width:100%;margin-bottom:.75rem;"/>
+            <div class="stat-grid" style="margin-bottom:.625rem;" id="statGridRelDiaCategoria"></div>
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin:.5rem 0 .375rem;">Formas de pagamento nesse dia</div>
+            <div class="stat-grid" id="statGridRelDiaPagamento"></div>
+          </div>
         </div>
         <!-- Totalizadores mensais -->
         <div class="stat-grid" style="margin-bottom:.875rem;" id="statGridRelatorioMes">
@@ -1331,18 +1336,6 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
     <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);">
       <button class="btn-ghost btn-w" id="btnVerificarPagamento" onclick="verificarPagamentoAgora()"><i class="ti ti-refresh"></i> Já paguei — verificar agora</button>
       <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:.5rem;">Pagou e não liberou na hora? Clica aí que a gente confere direto com o Asaas.</p>
-    </div>
-  </div>
-</div>
-
-<!-- DISTRIBUIÇÃO POR FORMA DE PAGAMENTO (clique num card de categoria em Compras) -->
-<div class="modal-overlay" id="distribPagModal" onclick="if(event.target===this)fecharDistribPag()">
-  <div class="modal-box" style="max-width:380px;">
-    <div class="modal-head"><span class="modal-title" id="distribPagTitulo"><i class="ti ti-chart-pie"></i> Formas de pagamento</span><button class="btn-icon" onclick="fecharDistribPag()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
-    <div id="distribPagLista"></div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);">
-      <span style="font-size:13px;font-weight:700;color:var(--text2);">Total</span>
-      <span style="font-size:15px;font-weight:700;color:var(--accent);font-family:'JetBrains Mono',monospace;" id="distribPagTotal">R$ 0,00</span>
     </div>
   </div>
 </div>
@@ -3182,8 +3175,13 @@ function saveEditCompra(id){
 function renderCompras(){
   const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data===currentDate);
   const tot={};
+  const totPag={};
+  const totPagGeral={PG:0,PGT:0,F:0};
   el('listaCompras').innerHTML=my.length?my.slice().reverse().map(c=>{
     const total=c.qtd*c.valorUnit;tot[c.categoria]=(tot[c.categoria]||0)+total;
+    if(!totPag[c.categoria])totPag[c.categoria]={PG:0,PGT:0,F:0};
+    totPag[c.categoria][c.pagamento]=(totPag[c.categoria][c.pagamento]||0)+total;
+    totPagGeral[c.pagamento]=(totPagGeral[c.pagamento]||0)+total;
     return`<div class="item-row" style="border-left-color:${corCat(c.categoria)};">
       <div class="item-head">
         <div><div class="item-title">${esc(c.produto)}${c.planejado?' <i class="ti ti-clipboard-check" style="font-size:12px;color:var(--text3)"></i>':''}</div>
@@ -3222,37 +3220,19 @@ function renderCompras(){
       </div></div>`;
   }).join(''):`<div class="empty"><i class="ti ti-shopping-bag"></i>Nada comprado ainda.</div>`;
   const totGeral=Object.values(tot).reduce((a,v)=>a+v,0);
-  const cardsHtml=listaCatComFallback().map(c=>`<div class="stat" style="cursor:pointer;" onclick="abrirDistribPagCategoria('${c.chave}')" title="Ver formas de pagamento"><div class="stat-label">${c.emoji} ${esc(c.nome)}</div><div class="stat-value">${fmt(tot[c.chave]||0)}</div></div>`).join('');
-  el('statGridCompras').innerHTML=cardsHtml+`<div class="stat" style="border-color:var(--accent-d);cursor:pointer;" onclick="abrirDistribPagCategoria('__total')" title="Ver formas de pagamento"><div class="stat-label" style="color:var(--accent);">Total do dia</div><div class="stat-value" style="color:var(--accent);" id="totDia">${fmt(totGeral)}</div></div>`;
+  const linhasPag=(porPag,base)=>['PG','PGT','F'].filter(k=>porPag[k]>0).map(k=>{
+    const pct=base>0?(porPag[k]/base*100):0;
+    return`<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:3px;">
+      <span style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${PAY_LABEL[k]}</span>
+      <span style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;white-space:nowrap;">${fmt(porPag[k])} · ${pct.toFixed(0)}%</span>
+    </div>`;
+  }).join('');
+  const cardsHtml=listaCatComFallback().map(c=>{
+    const catTot=tot[c.chave]||0;
+    return`<div class="stat"><div class="stat-label">${c.emoji} ${esc(c.nome)}</div><div class="stat-value">${fmt(catTot)}</div>${linhasPag(totPag[c.chave]||{},catTot)}</div>`;
+  }).join('');
+  el('statGridCompras').innerHTML=cardsHtml+`<div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total do dia</div><div class="stat-value" style="color:var(--accent);" id="totDia">${fmt(totGeral)}</div>${linhasPag(totPagGeral,totGeral)}</div>`;
 }
-
-/* ── DISTRIBUIÇÃO POR FORMA DE PAGAMENTO (clique num card de Compras) ── */
-function abrirDistribPagCategoria(catChave){
-  const isTotal=catChave==='__total';
-  const catInfo=isTotal?{nome:'Total do dia',emoji:'💰'}:(listaCatComFallback().find(c=>c.chave===catChave)||{nome:catChave,emoji:''});
-  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data===currentDate&&(isTotal||c.categoria===catChave));
-  const porPag={PG:0,PGT:0,F:0};
-  my.forEach(c=>{const t=c.qtd*c.valorUnit;porPag[c.pagamento]=(porPag[c.pagamento]||0)+t;});
-  const total=Object.values(porPag).reduce((a,v)=>a+v,0);
-  el('distribPagTitulo').innerHTML=`${catInfo.emoji} ${esc(catInfo.nome)}`;
-  el('distribPagTotal').textContent=fmt(total);
-  if(!total){
-    el('distribPagLista').innerHTML='<div class="empty"><i class="ti ti-shopping-bag"></i>Nada comprado ainda hoje nessa categoria.</div>';
-  } else {
-    el('distribPagLista').innerHTML=['PG','PGT','F'].map(k=>{
-      const v=porPag[k]||0;const pct=total>0?(v/total*100):0;
-      return`<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);">
-        <div>${badge(PAY_BADGE[k],PAY_LABEL[k])}</div>
-        <div style="text-align:right;">
-          <div style="font-weight:700;font-family:'JetBrains Mono',monospace;font-size:14px;">${fmt(v)}</div>
-          <div style="font-size:11px;color:var(--text3);">${pct.toFixed(0)}%</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-  el('distribPagModal').classList.add('open');
-}
-function fecharDistribPag(){el('distribPagModal').classList.remove('open');}
 
 /* ── FORNECEDORES ── */
 function getAllFornByCat(cat){
@@ -4390,6 +4370,14 @@ function calcRelPagamentos(de,ate){
   return{...tot,total};
 }
 
+function toggleRelDia(){
+  const body=el('relDiaBody');const chev=el('relDiaChevron');
+  if(!body)return;
+  const abrindo=body.style.display==='none';
+  body.style.display=abrindo?'block':'none';
+  if(chev)chev.style.transform=abrindo?'rotate(180deg)':'rotate(0deg)';
+  if(abrindo)renderRelDia();
+}
 function renderRelDia(){
   const diaInp=el('relDiaData');
   if(!diaInp)return;
