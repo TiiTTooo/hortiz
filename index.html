@@ -531,7 +531,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               oninput="filtrarTabela(this.value)"
               autocomplete="off"/>
           </div>
-          <div class="card" style="padding:.5rem 0;overflow-x:auto;-webkit-overflow-scrolling:touch;"><table class="prod-table" id="tabelaGrid" style="min-width:680px;"></table></div>
+          <div class="card" style="padding:.5rem 0;overflow:hidden;"><table class="prod-table" id="tabelaGrid"></table></div>
           <div id="listaPedidoTabela"></div>
         </div>
         <!-- Botão atalho para ir a Compras -->
@@ -2803,11 +2803,15 @@ function saveEditPedido(id,tabela){
 /* ── TABELA ── */
 function saveDraftFromDOM(){PRODUTOS[currentCatTab].forEach((p,i)=>{const inp=el('tq_'+i);if(inp)tabelaDraft[currentCatTab][p]=inp.value;const tt=el('tt_'+i);if(tt)tabelaDraftTipo[currentCatTab][p]=tt.value;const tu=el('tu_'+i);if(tu)tabelaDraftUnid[currentCatTab][p]=tu.value;const tf=el('tf_'+i);if(tf)tabelaDraftForn[currentCatTab][p]=tf.value;});}
 function filtrarTabela(q){
-  // Filtra as linhas visíveis da tabela em tempo real sem re-renderizar tudo
+  // Filtra as linhas visíveis da tabela em tempo real sem re-renderizar tudo.
+  // A linha extra do fornecedor (quando aberta) não tem o nome do produto no
+  // texto dela — usa o texto da linha ANTERIOR (a do produto) pra decidir.
   const termo=q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const rows=document.querySelectorAll('#tabelaGrid tbody tr');
   rows.forEach(row=>{
-    const nome=row.querySelector('td')?.textContent||'';
+    const isSub=row.classList.contains('tabela-forn-subrow');
+    const refRow=isSub?row.previousElementSibling:row;
+    const nome=refRow?.querySelector('td')?.textContent||'';
     const nomeNorm=nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     row.style.display=(!termo||nomeNorm.includes(termo))?'':'none';
   });
@@ -2820,9 +2824,16 @@ function switchCatTabela(cat){
   try{renderTabelaGrid();updateSalvarLabel();}catch(e){showToast(traduzErro(e,'Erro ao montar a tabela: '));}
   atualizarStickySave();
 }
+let tabelaFornAbertos=new Set();
+function toggleTabelaForn(cat,p){
+  saveDraftFromDOM(); // preserva o que já foi digitado antes de re-renderizar a grade
+  const key=cat+'|'+p;
+  if(tabelaFornAbertos.has(key))tabelaFornAbertos.delete(key);else tabelaFornAbertos.add(key);
+  renderTabelaGrid();
+}
 function renderTabelaGrid(){
   const cat=currentCatTab;
-  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th><th style="width:150px">Fornecedor</th></tr></thead><tbody>`+
+  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
       const padrao=produtoPadrao(cat,p);
       // Acha a linha pendente já salva desse produto ANTES de decidir tipo/embalagem
@@ -2839,8 +2850,18 @@ function renderTabelaGrid(){
       // permitir zerar/apagar).
       const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:(jaPedido>0?jaPedido:'');
       const hasQ=parseFloat(d)>0;
+      // Fornecedor não fica sempre visível (senão a tabela ficava larga demais e
+      // precisava rolar pro lado) — clica no produto pra abrir/fechar o campo.
+      // O ícone de caminhão fica destacado quando já tem fornecedor definido, pra
+      // dar pra ver de relance mesmo com o campo escondido.
+      const aberto=tabelaFornAbertos.has(cat+'|'+p);
       return`<tr class="${hasQ?'has-qty':''}">
-        <td style="font-size:13px;">${p}</td>
+        <td style="font-size:13px;cursor:pointer;" onclick="toggleTabelaForn('${cat}','${esc(escJs(p))}')">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span>${p}</span>
+            <i class="ti ti-truck" style="font-size:13px;flex-shrink:0;color:${df?'var(--accent)':'var(--text3)'};" title="${df?('Fornecedor: '+esc(df)):'Definir fornecedor'}"></i>
+          </div>
+        </td>
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
         <td>
           <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
@@ -2848,10 +2869,15 @@ function renderTabelaGrid(){
           </select>
         </td>
         <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/></td>
-        <td><input id="tf_${i}" placeholder="Fornecedor" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
-          <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+      </tr>${aberto?`<tr class="tabela-forn-subrow">
+        <td colspan="4" style="padding-top:0;background:var(--bg3);">
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 0;">
+            <label style="font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0;">🚚 Fornecedor</label>
+            <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;flex:1;min-width:0;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
+            <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+          </div>
         </td>
-      </tr>`;
+      </tr>`:''}`;
     }).join('')+`</tbody>`;
 }
 function onNovoProdutoTipoChange(){
