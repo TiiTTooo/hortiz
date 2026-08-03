@@ -2833,7 +2833,12 @@ function toggleTabelaForn(cat,p){
 }
 function renderTabelaGrid(){
   const cat=currentCatTab;
-  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
+  // Só Produto e Qtd ficam sempre visíveis — Tipo, Un/emb e Fornecedor são
+  // detalhes secundários que a maioria dos pedidos nem precisa mexer, e
+  // mantê-los sempre expostos (3 colunas extras) espremia a tabela e forçava
+  // rolagem lateral no celular. Clicar no produto abre uma linha com os 3
+  // juntos, empilhando/quebrando linha conforme o espaço (sem scroll horizontal).
+  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
       const padrao=produtoPadrao(cat,p);
       // Acha a linha pendente já salva desse produto ANTES de decidir tipo/embalagem
@@ -2850,31 +2855,34 @@ function renderTabelaGrid(){
       // permitir zerar/apagar).
       const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:(jaPedido>0?jaPedido:'');
       const hasQ=parseFloat(d)>0;
-      // Fornecedor não fica sempre visível (senão a tabela ficava larga demais e
-      // precisava rolar pro lado) — clica no produto pra abrir/fechar o campo.
-      // O ícone de caminhão fica destacado quando já tem fornecedor definido, pra
-      // dar pra ver de relance mesmo com o campo escondido.
       const aberto=tabelaFornAbertos.has(cat+'|'+p);
       return`<tr class="${hasQ?'has-qty':''}">
         <td style="font-size:13px;cursor:pointer;" onclick="toggleTabelaForn('${cat}','${esc(escJs(p))}')">
           <div style="display:flex;align-items:center;gap:6px;">
+            <i class="ti ti-chevron-${aberto?'down':'right'}" style="font-size:12px;flex-shrink:0;color:var(--text3);"></i>
             <span>${p}</span>
-            <i class="ti ti-truck" style="font-size:13px;flex-shrink:0;color:${df?'var(--accent)':'var(--text3)'};" title="${df?('Fornecedor: '+esc(df)):'Definir fornecedor'}"></i>
+            ${df?`<i class="ti ti-truck" style="font-size:12px;flex-shrink:0;color:var(--accent);" title="Fornecedor: ${esc(df)}"></i>`:''}
           </div>
         </td>
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
-        <td>
-          <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
-            ${tipoOptionsHtml(dt)}
-          </select>
-        </td>
-        <td><input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/></td>
       </tr>${aberto?`<tr class="tabela-forn-subrow">
-        <td colspan="4" style="padding-top:0;background:var(--bg3);">
-          <div style="display:flex;align-items:center;gap:6px;padding:4px 0;">
-            <label style="font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0;">🚚 Fornecedor</label>
-            <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;flex:1;min-width:0;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
-            <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+        <td colspan="2" style="padding-top:0;background:var(--bg3);">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;padding:6px 0;align-items:flex-end;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:var(--text3);">Tipo</label>
+              <select id="tt_${i}" style="font-size:12px;padding:5px 6px;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
+                ${tipoOptionsHtml(dt)}
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:var(--text3);">Un/emb</label>
+              <input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;width:78px;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:150px;">
+              <label style="font-size:10px;color:var(--text3);">🚚 Fornecedor</label>
+              <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
+              <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+            </div>
           </div>
         </td>
       </tr>`:''}`;
