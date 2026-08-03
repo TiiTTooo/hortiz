@@ -2666,6 +2666,18 @@ function itemPedidoExistente(categoria,produto,tipo,unidPorCaixa){
     (i.unidPorCaixa||null)===(unidPorCaixa||null)
   );
 }
+function itemPedidoExistentePorProduto(categoria,produto){
+  // Usado pela TABELA (view-tabela): um produto tem UMA linha pendente só por dia/loja,
+  // não importa o tipo/embalagem escolhido. Sem isso, se o tipo padrão do produto mudou
+  // desde que o pedido foi salvo (ou o "un/emb" salvo era diferente do padrão atual), a
+  // caixinha não achava o item existente (mesmo já tendo 10 pedidos, aparecia 0/vazio),
+  // e ao editar/salvar criava uma linha NOVA duplicada em vez de atualizar a que já
+  // existia — o cliente via "tudo sendo somado/recriado" ao só adicionar 1 item a mais.
+  return itensPedido.find(i=>
+    i.lojaId===currentLojaId&&i.data===currentDate&&i.status==='pendente'&&
+    i.produto===produto&&i.categoria===categoria
+  );
+}
 function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa}){
   // Usado pelo fluxo "item por item" (view-lista) — aqui faz sentido continuar somando:
   // cada "Adicionar ao pedido" é uma ação explícita de adicionar mais uma quantidade.
@@ -2788,10 +2800,12 @@ function renderTabelaGrid(){
   el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th style="width:120px">Tipo</th><th style="width:110px">Un/emb</th></tr></thead><tbody>`+
     PRODUTOS[cat].map((p,i)=>{
       const padrao=produtoPadrao(cat,p);
-      const dt=tabelaDraftTipo[cat][p]||padrao.tipo;
-      const du=tabelaDraftUnid[cat][p]||padrao.unidPorCaixa||'';
-      const unidNum=tipoTemSubQtd(dt)?(parseInt(du)||null):null;
-      const existente=itemPedidoExistente(cat,p,dt,unidNum);
+      // Acha a linha pendente já salva desse produto ANTES de decidir tipo/embalagem
+      // mostrados — assim a caixinha reflete o que tá REALMENTE salvo (e não some/
+      // duplica quando o padrão do catálogo mudou desde que o pedido foi feito).
+      const existente=itemPedidoExistentePorProduto(cat,p);
+      const dt=tabelaDraftTipo[cat][p]||(existente?(existente.tipo||'unidade'):padrao.tipo);
+      const du=tabelaDraftUnid[cat][p]||(existente?(existente.unidPorCaixa||''):(padrao.unidPorCaixa||''));
       const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
       // A caixinha sempre mostra o total pendente de verdade (não um rascunho que some
       // depois de salvar) — editar e salvar SUBSTITUI esse total, não soma em cima dele.
@@ -2835,9 +2849,7 @@ function updateSalvarLabel(){
     const draftVal=tabelaDraft[c][p];
     if(draftVal===undefined||draftVal==='')return;
     const qtd=parseFloat(draftVal)||0;
-    const tipo=tabelaDraftTipo[c][p]||produtoPadrao(c,p).tipo;
-    const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[c][p])||null):null;
-    const existente=itemPedidoExistente(c,p,tipo,unid);
+    const existente=itemPedidoExistentePorProduto(c,p);
     const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
     if(qtd!==jaPedido)t++;
   }));
@@ -2851,14 +2863,19 @@ function salvarTabela(){
     const qtd=parseFloat(draftVal)||0;
     const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;
     const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;
-    const existente=itemPedidoExistente(cat,p,tipo,unid);
+    // Match só por produto/categoria (não por tipo/embalagem) — um produto tem UMA
+    // linha pendente por dia/loja. Antes, se o tipo padrão do produto tivesse mudado
+    // (ou o un/emb salvo fosse diferente), essa busca não achava a linha existente e
+    // criava uma NOVA linha duplicada em vez de atualizar — é isso que o cliente via
+    // como "está juntando/recriando tudo" ao só adicionar 1 item a mais.
+    const existente=itemPedidoExistentePorProduto(cat,p);
     const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
-    if(qtd===jaPedido)return; // sem mudança de verdade
+    if(qtd===jaPedido&&existente&&(existente.tipo||'unidade')===(tipo||'unidade')&&(existente.unidPorCaixa||null)===(unid||null))return; // sem mudança de verdade
     if(qtd<=0){
       if(existente){itensPedido=itensPedido.filter(i=>i.id!==existente.id);syncPedidoDelete(existente.id);n++;}
       return;
     }
-    if(existente){existente.qtd=qtd;syncPedidoUpdate(existente);}
+    if(existente){existente.qtd=qtd;existente.tipo=tipo;existente.unidPorCaixa=unid;syncPedidoUpdate(existente);}
     else adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid});
     n++;
   });});
