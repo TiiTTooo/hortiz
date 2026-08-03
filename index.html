@@ -3165,7 +3165,7 @@ function addAvulso(){
   el('qtdAvulso').value='';el('valorAvulso').value='';el('fornAvulso').value='';
   renderCompras();renderFornecedores();showToast('Compra avulsa adicionada!');
 }
-function toggleEditCompra(id){el('ec-'+id).classList.toggle('open');}
+function toggleEditCompra(id,pfx){el((pfx||'ec-')+id).classList.toggle('open');}
 function desfazerCompra(id){
   const c=compras.find(x=>x.id===id);if(!c)return;
   // Remove a compra
@@ -3179,13 +3179,14 @@ function desfazerCompra(id){
   }
   // Remove do banco
   db.from('compras').delete().eq('id',id).then(({error})=>{if(error)showToast(traduzErro(error,'Erro ao remover do banco: '));});
-  renderCompras();renderPendentes();renderNaoComprados();renderPedido();
+  renderCompras();renderFornecedores();renderPendentes();renderNaoComprados();renderPedido();
   showToast('Compra desfeita — item voltou para pendente');
 }
-function saveEditCompra(id){
+function saveEditCompra(id,pfx){
+  pfx=pfx||'ec-';
   const c=compras.find(x=>x.id===id);if(!c)return;
-  c.qtd=parseFloat((el('ec-qtd-'+id).value||'').replace(',','.'))||c.qtd;c.valorUnit=parseFloat((el('ec-val-'+id).value||'').replace(',','.'))||c.valorUnit;
-  c.fornecedor=el('ec-forn-'+id).value.trim()||c.fornecedor;c.pagamento=el('ec-pag-'+id).value;
+  c.qtd=parseFloat((el(pfx+'qtd-'+id).value||'').replace(',','.'))||c.qtd;c.valorUnit=parseFloat((el(pfx+'val-'+id).value||'').replace(',','.'))||c.valorUnit;
+  c.fornecedor=el(pfx+'forn-'+id).value.trim()||c.fornecedor;c.pagamento=el(pfx+'pag-'+id).value;
   syncCompraUpdate(c);
   renderCompras();renderFornecedores();showToast('Alteração salva!');
 }
@@ -3426,10 +3427,56 @@ function renderFornecedores(){
     my=my.filter(c=>prodsNoPeriodo.has(c.produto+'|'+c.fornecedor));
   }
   const byF={};my.forEach(c=>{if(!byF[c.fornecedor])byF[c.fornecedor]={categoria:c.categoria,PG:0,PGT:0,F:0,total:0};const t=c.qtd*c.valorUnit;byF[c.fornecedor][c.pagamento]+=t;byF[c.fornecedor].total+=t;});
-  el('listaFornecedores').innerHTML=Object.keys(byF).length?Object.keys(byF).map(f=>{const d=byF[f];return`<div class="forn-card">
-    <div class="forn-head">
-      <span class="forn-name">${f}</span>
-      ${badgeCat(d.categoria)}
+  el('listaFornecedores').innerHTML=Object.keys(byF).length?Object.keys(byF).map(f=>{
+    const d=byF[f];
+    const aberto=fornExpandidos.has(f);
+    const itensForn=my.filter(c=>c.fornecedor===f).slice().reverse();
+    const itensHtml=itensForn.length?itensForn.map(c=>{
+      const total=c.qtd*c.valorUnit;
+      return`<div class="item-row" style="border-left-color:${corCat(c.categoria)};margin-top:.5rem;">
+        <div class="item-head">
+          <div><div class="item-title">${esc(c.produto)}</div>
+          <div class="item-meta">${c.qtd} × ${fmt(c.valorUnit)} · ${c.data.split('-').reverse().join('/')}</div></div>
+          <div class="item-amount"><div class="val">${fmt(total)}</div>
+            <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:3px;">
+              ${badge(PAY_BADGE[c.pagamento],PAY_LABEL[c.pagamento])}
+              <button class="btn-icon" onclick="event.stopPropagation();toggleEditCompra(${c.id},'fec-')"><i class="ti ti-edit" style="font-size:15px;"></i></button>
+            </div></div></div>
+        <div class="inline-form" id="fec-${c.id}" style="flex-wrap:wrap;gap:.5rem;">
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:80px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Quantidade</label>
+            <input type="number" step="1" value="${c.qtd}" id="fec-qtd-${c.id}" placeholder="Qtd"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:90px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Valor cx/un (R$)</label>
+            <input type="number" step="0.01" value="${c.valorUnit}" id="fec-val-${c.id}" placeholder="R$ 0,00"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
+            <input value="${esc(c.fornecedor)}" id="fec-forn-${c.id}" placeholder="Fornecedor" list="fecForn-${c.id}"/>
+            <datalist id="fecForn-${c.id}">${getAllFornByCat(c.categoria).map(fn=>`<option value="${esc(fn)}">`).join('')}</datalist>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
+            <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Pagamento</label>
+            <select id="fec-pag-${c.id}">
+              <option value="PG"${c.pagamento==='PG'?' selected':''}>💵 Dinheiro</option>
+              <option value="PGT"${c.pagamento==='PGT'?' selected':''}>📲 Transferência/Pix</option>
+              <option value="F"${c.pagamento==='F'?' selected':''}>📒 Fiado</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:2px;">
+            <button class="btn-primary" onclick="saveEditCompra(${c.id},'fec-')" style="flex:2;"><i class="ti ti-device-floppy"></i> Salvar alteração</button>
+            <button class="btn-ghost" onclick="desfazerCompra(${c.id})" style="flex:1;color:var(--red);border-color:var(--red);"><i class="ti ti-arrow-back-up"></i> Desfazer</button>
+          </div>
+        </div></div>`;
+    }).join(''):'<div class="empty" style="padding:.75rem;">Nenhuma compra encontrada.</div>';
+    return`<div class="forn-card">
+    <div class="forn-head" style="cursor:pointer;" onclick="toggleFornExpandido('${escJs(f)}')">
+      <span class="forn-name">${esc(f)}</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${badgeCat(d.categoria)}
+        <i class="ti ti-chevron-${aberto?'up':'down'}" style="font-size:16px;color:var(--text3);"></i>
+      </div>
     </div>
     <div class="forn-breakdown" style="margin-bottom:4px;">
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
@@ -3438,7 +3485,15 @@ function renderFornecedores(){
         <span style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;"><span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;">📒 Fiado</span><strong style="font-size:15px;">${fmt(d.F)}</strong></span>
       </div>
     </div>
-    <div class="forn-total">${fmt(d.total)}</div></div>`;}).join(''):`<div class="empty" style="padding:1.5rem;"><i class="ti ti-truck"></i>Nenhuma compra encontrada com esses filtros.</div>`;
+    <div class="forn-total">${fmt(d.total)}</div>
+    ${aberto?`<div style="margin-top:.25rem;padding-top:.5rem;border-top:1px solid var(--border);">${itensHtml}</div>`:''}
+    </div>`;
+  }).join(''):`<div class="empty" style="padding:1.5rem;"><i class="ti ti-truck"></i>Nenhuma compra encontrada com esses filtros.</div>`;
+}
+let fornExpandidos=new Set();
+function toggleFornExpandido(nome){
+  if(fornExpandidos.has(nome))fornExpandidos.delete(nome);else fornExpandidos.add(nome);
+  renderFornecedores();
 }
 
 /* ── DESPESAS ── */
