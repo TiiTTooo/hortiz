@@ -733,6 +733,14 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('categoria')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por categoria</button>
           <button class="btn-ghost btn-sm" onclick="exportarRelatorioPdf('produto')"><i class="ti ti-file-type-pdf"></i> Exportar PDF — por produto</button>
         </div>
+        <!-- Ver um dia específico -->
+        <div class="card" style="margin-bottom:.875rem;">
+          <div class="card-label"><i class="ti ti-calendar-event"></i> Ver um dia específico</div>
+          <input type="date" id="relDiaData" onchange="renderRelDia()" style="width:100%;margin-bottom:.75rem;"/>
+          <div class="stat-grid" style="margin-bottom:.625rem;" id="statGridRelDiaCategoria"></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin:.5rem 0 .375rem;">Formas de pagamento nesse dia</div>
+          <div class="stat-grid" id="statGridRelDiaPagamento"></div>
+        </div>
         <!-- Totalizadores mensais -->
         <div class="stat-grid" style="margin-bottom:.875rem;" id="statGridRelatorioMes">
           <div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total/mês</div><div class="stat-value" style="color:var(--accent);" id="rTotalMes">R$ 0</div></div>
@@ -2485,7 +2493,7 @@ function switchTab(tab){
   ALL_TABS.forEach(t=>{const s=el('tab-'+t);if(s)s.style.display=t===tab?'':'none';});
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
   atualizarStickySave();
-  if(tab==='relatorios'){setTimeout(()=>{initBarChart();renderRelTotals();},50);}
+  if(tab==='relatorios'){setTimeout(()=>{initBarChart();renderRelTotals();renderRelDia();},50);}
   if(tab==='precos'){renderPrecosView();}
   if(tab==='gerenciar'){switchGerenciarView(gerenciarViewAtual);}
   if(tab==='historico')renderHistoricoCompras();
@@ -4380,6 +4388,36 @@ function calcRelPagamentos(de,ate){
   rows.forEach(c=>{const t=c.qtd*c.valorUnit;tot[c.pagamento]=(tot[c.pagamento]||0)+t;});
   const total=Object.values(tot).reduce((a,v)=>a+v,0);
   return{...tot,total};
+}
+
+function renderRelDia(){
+  const diaInp=el('relDiaData');
+  if(!diaInp)return;
+  if(!diaInp.value)diaInp.value=currentDate;
+  const dia=diaInp.value;
+  const listaCat=listaCatComFallback();
+  const t=calcRelTotals(dia,dia);
+  const catGrid=el('statGridRelDiaCategoria');
+  if(catGrid){
+    if(!t.total){
+      catGrid.innerHTML='<div class="empty" style="grid-column:1/-1;"><i class="ti ti-calendar-x"></i>Nada comprado nesse dia.</div>';
+    } else {
+      catGrid.innerHTML=listaCat.map(c=>`<div class="stat"><div class="stat-label">${c.emoji} ${esc(c.nome)}</div><div class="stat-value">${fmt(t[c.chave]||0)}</div></div>`).join('')
+        +`<div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total do dia</div><div class="stat-value" style="color:var(--accent);">${fmt(t.total)}</div></div>`;
+    }
+  }
+  const p=calcRelPagamentos(dia,dia);
+  const pagGrid=el('statGridRelDiaPagamento');
+  if(pagGrid){
+    if(!p.total){
+      pagGrid.innerHTML='<div class="empty" style="grid-column:1/-1;">Sem compras nesse dia.</div>';
+    } else {
+      pagGrid.innerHTML=['PG','PGT','F'].map(k=>{
+        const v=p[k]||0;const pct=p.total>0?(v/p.total*100):0;
+        return`<div class="stat"><div class="stat-label">${badge(PAY_BADGE[k],PAY_LABEL[k])}</div><div class="stat-value">${fmt(v)}</div><div style="font-size:11px;color:var(--text3);margin-top:2px;">${pct.toFixed(0)}%</div></div>`;
+      }).join('');
+    }
+  }
 }
 
 function renderRelTotals(){
