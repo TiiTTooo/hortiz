@@ -422,12 +422,19 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="master" onclick="switchTab('master')" id="sideMaster" style="display:none;color:var(--amber);"><i class="ti ti-crown"></i> Master</div>
     </div>
 
-    <div id="avisoVencimentoBanner" style="display:none;background:var(--amber-bg);color:var(--amber);padding:.625rem 1.25rem;font-size:13px;font-weight:600;text-align:center;border-bottom:1px solid var(--amber);">
-      <i class="ti ti-alert-triangle"></i> <span id="avisoVencimentoTexto"></span>
-      <a href="#" onclick="event.preventDefault();switchTab('assinatura')" style="color:inherit;text-decoration:underline;margin-left:6px;">Ver assinatura</a>
-    </div>
-
     <main id="mainContent">
+      <!-- Esse aviso ficava como filho direto de .app-layout (flex-row junto com sidebar
+      e main) em vez de dentro do conteúdo — como ele não tinha largura/flex definidos,
+      o navegador media a largura pelo texto (uma linha só, sem quebrar), e isso espremia
+      o #mainContent pra uma coluna de ~300px, jogando o resto do layout pra fora da tela.
+      Ficou invisível enquanto o aviso nunca aparecia (display:none) — só estourou agora
+      que assinaturas começaram a entrar na janela de "vence em N dias" e o banner passou
+      a ser mostrado de verdade. Movido pra dentro de #mainContent (block normal), onde
+      ocupa a largura certa e empilha como qualquer outro elemento. -->
+      <div id="avisoVencimentoBanner" style="display:none;background:var(--amber-bg);color:var(--amber);padding:.625rem 1.25rem;font-size:13px;font-weight:600;text-align:center;border-bottom:1px solid var(--amber);">
+        <i class="ti ti-alert-triangle"></i> <span id="avisoVencimentoTexto"></span>
+        <a href="#" onclick="event.preventDefault();switchTab('assinatura')" style="color:inherit;text-decoration:underline;margin-left:6px;">Ver assinatura</a>
+      </div>
 
       <!-- HOME -->
       <section id="tab-home">
@@ -3258,11 +3265,19 @@ function saveEditCompra(id,pfx){
   renderCompras();renderFornecedores();showToast('Alteração salva!');
 }
 function renderCompras(){
-  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data===currentDate);
+  // Antes ficava em ordem de inserção (mais recente primeiro), o que misturava
+  // frutas/legumes/verduras e produtos fora de ordem — difícil de conferir uma
+  // lista grande. Agora ordena por categoria (Frutas, Legumes, Verduras, na
+  // ordem cadastrada) e dentro de cada categoria em ordem alfabética, sem
+  // separar com títulos — só a ordem das linhas muda.
+  const catOrdem={};listaCatComFallback().forEach((c,i)=>{catOrdem[c.chave]=i;});
+  const my=compras.filter(c=>c.lojaId===currentLojaId&&c.data===currentDate)
+    .slice()
+    .sort((a,b)=>(catOrdem[a.categoria]??99)-(catOrdem[b.categoria]??99)||a.produto.localeCompare(b.produto,'pt-BR',{sensitivity:'base'}));
   const tot={};
   const totPag={};
   const totPagGeral={PG:0,PGT:0,F:0};
-  el('listaCompras').innerHTML=my.length?my.slice().reverse().map(c=>{
+  el('listaCompras').innerHTML=my.length?my.map(c=>{
     const total=c.qtd*c.valorUnit;tot[c.categoria]=(tot[c.categoria]||0)+total;
     if(!totPag[c.categoria])totPag[c.categoria]={PG:0,PGT:0,F:0};
     totPag[c.categoria][c.pagamento]=(totPag[c.categoria][c.pagamento]||0)+total;
