@@ -3105,12 +3105,16 @@ function renderPendentesCat(){
     return;
   }
 
+  // Ordena por nome do produto dentro de cada categoria — a lista vinha na ordem em
+  // que os itens foram adicionados ao pedido, o que fica bagunçado quando tem muito
+  // item (ex: Laranja Pequena, Manga Bourbon, Laranja Pera — fora de ordem).
+  const porNome=(a,b)=>a.produto.localeCompare(b.produto,'pt-BR',{sensitivity:'base'});
   let html='';
   if(ceasaCatAtiva==='todas'){
     // Mostra todas as categorias juntas, uma abaixo da outra, cada uma só com seus itens
     let algumaComItem=false;
     CATS.forEach(c=>{
-      const grupo=itens.filter(p=>p.categoria===c.chave);
+      const grupo=itens.filter(p=>p.categoria===c.chave).sort(porNome);
       if(grupo.length){ algumaComItem=true; html+=blocoCategoriaHtml(c,grupo); }
     });
     if(!algumaComItem){
@@ -3119,7 +3123,7 @@ function renderPendentesCat(){
   } else {
     // Mostra apenas a categoria ativa
     const catAtivaInfo=CATS.find(c=>c.chave===ceasaCatAtiva)||catInfo(ceasaCatAtiva,CATS);
-    const grupo=itens.filter(p=>p.categoria===ceasaCatAtiva);
+    const grupo=itens.filter(p=>p.categoria===ceasaCatAtiva).sort(porNome);
     if(!grupo.length){
       html='<div class="empty" style="padding:2rem;text-align:center;"><i class="ti ti-checks" style="font-size:28px;display:block;margin-bottom:.5rem;"></i>Nenhum pendente em '+catAtivaInfo.nome+' hoje.</div>';
     } else {
@@ -3134,7 +3138,7 @@ function renderPendentesCat(){
   if(naoComp.length){
     htmlNao=`<div class="sh"><i class="ti ti-ban"></i> Não comprados</div>`;
     CATS.forEach(({chave:k,emoji})=>{
-      const grupo=naoComp.filter(p=>p.categoria===k);
+      const grupo=naoComp.filter(p=>p.categoria===k).sort(porNome);
       if(!grupo.length)return;
       htmlNao+=grupo.map(p=>`<div class="item-row" style="opacity:.6;display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:13px;">${emoji} ${esc(p.produto)} <small style="color:var(--text3)">(${p.qtd} prev.)</small></span>
