@@ -2292,8 +2292,11 @@ function atualizarLabelsPreco(){
 }
 
 /* ── SUBSCRIPTION SYSTEM ── */
-// sub: {status:'active'|'expired'|'trial', expiresAt: Date, trialDaysLeft: number}
-let subscription={status:'trial', expiresAt: new Date(Date.now()+3*86400000), trialDaysLeft:3, valorMensal:250};
+// sub: {status:'active'|'expired'|'trial'|'grace', expiresAt: Date, trialDaysLeft: number}
+// 'grace': assinatura venceu (status 'vencida' no banco) mas ainda dentro da carência de
+// CARENCIA_VENCIMENTO_DIAS dias após o vencimento — acesso continua liberado, só avisa.
+const CARENCIA_VENCIMENTO_DIAS=3;
+let subscription={status:'trial', expiresAt: new Date(Date.now()+3*86400000), trialDaysLeft:3, valorMensal:250, graceDiasRestantes:0};
 let todasLojas=[]; // cache master
 async function moverLojaMaster(id,direcao){
   const ordenadas=[...todasLojas].sort((a,b)=>(a.ordem||0)-(b.ordem||0));
@@ -2329,6 +2332,18 @@ async function checkSubscription(){
       } else if(status==='ativa'||status==='isenta'){
         subscription.status='active';
         subscription.expiresAt=new Date(sub.proxima_cobranca||'2099-01-01');
+      } else if(status==='vencida'&&sub.proxima_cobranca){
+        // Venceu, mas dá carência de CARENCIA_VENCIMENTO_DIAS dias após o vencimento
+        // antes de bloquear o acesso operacional — só bloqueia mesmo se passar disso.
+        const vencimento=new Date(sub.proxima_cobranca);
+        subscription.expiresAt=vencimento;
+        const diasVencida=Math.floor((new Date()-vencimento)/86400000);
+        if(diasVencida<=CARENCIA_VENCIMENTO_DIAS){
+          subscription.status='grace';
+          subscription.graceDiasRestantes=Math.max(0,CARENCIA_VENCIMENTO_DIAS-diasVencida);
+        } else {
+          subscription.status='expired';
+        }
       } else {
         subscription.status='expired';
       }
@@ -2361,6 +2376,22 @@ async function checkSubscription(){
 function atualizarAvisoVencimento(){
   const banner=el('avisoVencimentoBanner');
   if(!banner)return;
+  const podeVerCarencia=currentUser&&(currentUser.role==='owner'||currentUser.role==='manager'||currentUser.isAdmin);
+  if(subscription.status==='grace'&&podeVerCarencia){
+    // Vencida, mas dentro da carência — ainda com acesso liberado. Avisa em vermelho
+    // (mais urgente que o aviso de "vai vencer") pra não passar despercebido, já que
+    // gerente também precisa saber que o bloqueio está chegando.
+    const quandoBloqueia=subscription.graceDiasRestantes<=0?'a qualquer momento':subscription.graceDiasRestantes===1?'amanhã':'em '+subscription.graceDiasRestantes+' dias';
+    el('avisoVencimentoTexto').textContent=`Sua assinatura venceu em ${subscription.expiresAt.toLocaleDateString('pt-BR')} e o pagamento ainda não foi confirmado. O acesso será bloqueado ${quandoBloqueia} se não regularizar.`;
+    banner.style.background='var(--red-bg)';
+    banner.style.color='var(--red)';
+    banner.style.borderColor='var(--red)';
+    banner.style.display='block';
+    return;
+  }
+  banner.style.background='var(--amber-bg)';
+  banner.style.color='var(--amber)';
+  banner.style.borderColor='var(--amber)';
   const podeVer=currentUser&&(currentUser.role==='owner'||currentUser.isAdmin);
   if(!podeVer||subscription.status!=='active'){banner.style.display='none';return;}
   const diasParaVencer=Math.ceil((subscription.expiresAt-new Date())/86400000);
@@ -2404,11 +2435,12 @@ function updateSubStatus(){
 }
 function openSubManager(){
   const exp=subscription.expiresAt.toLocaleDateString('pt-BR');
+  const isGrace=subscription.status==='grace';
   el('subManagerContent').innerHTML=`
     <div style="text-align:center;padding:.5rem 0 1.25rem;">
-      <div style="font-size:40px;margin-bottom:.5rem;">${subscription.status==='active'?'✅':subscription.status==='trial'?'⏳':'🔴'}</div>
-      <p style="font-size:16px;font-weight:700;margin-bottom:.25rem;">${subscription.status==='active'?'Assinatura Ativa':subscription.status==='trial'?'Período de Teste':'Assinatura Vencida'}</p>
-      <p style="font-size:13px;color:var(--text2);">${subscription.status==='trial'?`${subscription.trialDaysLeft} dia(s) restante(s) de teste`:`Vence / venceu em ${exp}`}</p>
+      <div style="font-size:40px;margin-bottom:.5rem;">${subscription.status==='active'?'✅':subscription.status==='trial'?'⏳':isGrace?'⚠️':'🔴'}</div>
+      <p style="font-size:16px;font-weight:700;margin-bottom:.25rem;">${subscription.status==='active'?'Assinatura Ativa':subscription.status==='trial'?'Período de Teste':isGrace?'Assinatura Vencida (acesso ainda liberado)':'Assinatura Vencida'}</p>
+      <p style="font-size:13px;color:var(--text2);">${subscription.status==='trial'?`${subscription.trialDaysLeft} dia(s) restante(s) de teste`:isGrace?`Venceu em ${exp} — acesso bloqueia em ${subscription.graceDiasRestantes} dia(s) se não regularizar`:`Vence / venceu em ${exp}`}</p>
     </div>
     <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1rem;">
       <p style="font-size:13px;color:var(--text2);margin-bottom:.5rem;">Plano atual</p>
@@ -4704,10 +4736,11 @@ function renderAssinatura(){
   const now=new Date();
   const isActive=subscription.status==='active';
   const isTrial=subscription.status==='trial';
-  const icon=isActive?'✅':isTrial?'⏳':'🔴';
-  const title=isActive?'Assinatura Ativa':isTrial?'Período de Teste':'Assinatura Vencida';
+  const isGrace=subscription.status==='grace';
+  const icon=isActive?'✅':isTrial?'⏳':isGrace?'⚠️':'🔴';
+  const title=isActive?'Assinatura Ativa':isTrial?'Período de Teste':isGrace?'Assinatura Vencida (acesso ainda liberado)':'Assinatura Vencida';
   const exp=subscription.expiresAt.toLocaleDateString('pt-BR');
-  const desc=isTrial?`${subscription.trialDaysLeft} dia(s) de teste restante(s)`:isActive?`Vence em ${exp}`:`Vencida em ${exp}`;
+  const desc=isTrial?`${subscription.trialDaysLeft} dia(s) de teste restante(s)`:isActive?`Vence em ${exp}`:isGrace?`Venceu em ${exp} — acesso bloqueia em ${subscription.graceDiasRestantes} dia(s) se não regularizar`:`Vencida em ${exp}`;
   const subIcon=el('subIconBig');const subTitle=el('subStatusTitle');const subDesc=el('subStatusDesc');
   if(subIcon){subIcon.textContent=icon;subTitle.textContent=title;subDesc.textContent=desc;}
   const titulo=el('payCardTitulo');const assinarDiv=el('payCardAssinar');const cancelarDiv=el('payCardCancelar');
