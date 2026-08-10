@@ -2297,6 +2297,18 @@ function atualizarLabelsPreco(){
 // CARENCIA_VENCIMENTO_DIAS dias após o vencimento — acesso continua liberado, só avisa.
 const CARENCIA_VENCIMENTO_DIAS=3;
 let subscription={status:'trial', expiresAt: new Date(Date.now()+3*86400000), trialDaysLeft:3, valorMensal:250, graceDiasRestantes:0};
+// Datas tipo 'date' do Postgres (ex: proxima_cobranca, trial_fim) vêm como string
+// 'YYYY-MM-DD'. `new Date('YYYY-MM-DD')` interpreta isso como meia-noite UTC, e ao
+// formatar com toLocaleDateString() num fuso atrás de UTC (Brasil) a data exibida
+// volta um dia (ex: banco tem 09/08, tela mostra 08/08). Parseia como meia-noite
+// no fuso LOCAL do navegador em vez disso, pra exibição e contagem de dias baterem
+// com o que foi digitado no painel.
+function dataLocalDeStr(str){
+  if(!str)return null;
+  const [y,m,d]=String(str).split('-').map(Number);
+  if(!y||!m||!d)return null;
+  return new Date(y,m-1,d);
+}
 let todasLojas=[]; // cache master
 async function moverLojaMaster(id,direcao){
   const ordenadas=[...todasLojas].sort((a,b)=>(a.ordem||0)-(b.ordem||0));
@@ -2325,17 +2337,17 @@ async function checkSubscription(){
       const trialFim=sub.trial_fim;
       const status=sub.status;
       if(status==='trial'){
-        const diasLeft=Math.ceil((new Date(trialFim)-new Date())/86400000);
+        const diasLeft=Math.ceil((dataLocalDeStr(trialFim)-new Date())/86400000);
         subscription.trialDaysLeft=Math.max(0,diasLeft);
         subscription.status=diasLeft<=0?'expired':'trial';
-        subscription.expiresAt=new Date(trialFim);
+        subscription.expiresAt=dataLocalDeStr(trialFim);
       } else if(status==='ativa'||status==='isenta'){
         subscription.status='active';
-        subscription.expiresAt=new Date(sub.proxima_cobranca||'2099-01-01');
+        subscription.expiresAt=dataLocalDeStr(sub.proxima_cobranca)||new Date('2099-01-01');
       } else if(status==='vencida'&&sub.proxima_cobranca){
         // Venceu, mas dá carência de CARENCIA_VENCIMENTO_DIAS dias após o vencimento
         // antes de bloquear o acesso operacional — só bloqueia mesmo se passar disso.
-        const vencimento=new Date(sub.proxima_cobranca);
+        const vencimento=dataLocalDeStr(sub.proxima_cobranca);
         subscription.expiresAt=vencimento;
         const diasVencida=Math.floor((new Date()-vencimento)/86400000);
         if(diasVencida<=CARENCIA_VENCIMENTO_DIAS){
