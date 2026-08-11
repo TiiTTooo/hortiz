@@ -4992,10 +4992,28 @@ async function excluirLojaDefinitivamenteMaster(lojaId,nomeLoja){
   const digitado=prompt('⚠️ ISSO APAGA DE VEZ todos os pedidos, compras, despesas, fornecedores e assinaturas da loja "'+nomeLoja+'". NÃO TEM COMO DESFAZER.\n\nPra confirmar, digite o nome exato da loja:');
   if(digitado===null)return;
   if(digitado.trim().toLowerCase()!==nomeLoja.trim().toLowerCase()){showToast('Nome digitado não confere. Nada foi excluído.');return;}
+  await tentarExcluirLojaDefinitivamente(lojaId,nomeLoja,null);
+}
+// Tenta excluir a loja; se algum perfil ficaria sem loja nenhuma (erro específico do
+// banco), pergunta pro admin qual loja usar como destino pra esse(s) perfil(is) e
+// tenta de novo já com o destino escolhido, em vez de simplesmente falhar.
+async function tentarExcluirLojaDefinitivamente(lojaId,nomeLoja,lojaDestinoId){
   showToast('Excluindo...');
   try{
-    const {error}=await db.rpc('excluir_loja_definitivamente',{p_loja_id:lojaId});
-    if(error){showToast(traduzErro(error,'Erro ao excluir: '));return;}
+    const {error}=await db.rpc('excluir_loja_definitivamente',{p_loja_id:lojaId,p_loja_destino_id:lojaDestinoId});
+    if(error){
+      if(!lojaDestinoId&&/ficaria sem nenhuma loja/i.test(error.message||'')){
+        const opcoes=todasLojas.filter(l=>l.id!==lojaId).map(l=>l.nome).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+        const nomeDestino=prompt('Essa loja tem um usuário que ficaria sem nenhuma loja vinculada.\n\nDigite o nome exato de outra loja já existente pra transferir esse usuário antes de excluir "'+nomeLoja+'":\n\nLojas disponíveis:\n'+opcoes.join(', '));
+        if(nomeDestino===null){showToast('Nada foi excluído.');return;}
+        const lojaDestino=todasLojas.find(l=>l.id!==lojaId&&l.nome.trim().toLowerCase()===nomeDestino.trim().toLowerCase());
+        if(!lojaDestino){showToast('Loja de destino não encontrada. Nada foi excluído.');return;}
+        await tentarExcluirLojaDefinitivamente(lojaId,nomeLoja,lojaDestino.id);
+        return;
+      }
+      showToast(traduzErro(error,'Erro ao excluir: '));
+      return;
+    }
     showToast('Loja excluída definitivamente.');
     renderMaster(true);
   }catch(e){showToast(traduzErro(e,'Erro: '));}
