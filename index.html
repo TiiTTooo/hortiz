@@ -408,6 +408,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       </div>
       <div class="side-btn active" data-tab="home"        onclick="switchTab('home')"><i class="ti ti-home"></i> Início</div>
       <div class="side-btn" data-tab="pedidos"      onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i> Pedidos</div>
+      <div class="side-btn" data-tab="precofinal"   onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i> Preço Final</div>
       <div class="side-btn" data-tab="compras"      onclick="switchTab('compras')"><i class="ti ti-map-pin"></i> Compras</div>
       <div class="side-btn" data-tab="despesas"     onclick="switchTab('despesas')"><i class="ti ti-receipt"></i> Despesas</div>
       <div class="side-btn" data-tab="fornecedores" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i> Fornecedores</div>
@@ -546,6 +547,26 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <button class="btn-ghost btn-w" onclick="switchTab('compras')" style="gap:8px;">
             <i class="ti ti-map-pin"></i> Ir para Compras
           </button>
+        </div>
+      </section>
+
+      <!-- PREÇO FINAL (só supervisor(a) — versão enxuta da aba Custo/Preço, sem custo nem margem) -->
+      <section id="tab-precofinal" style="display:none;">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Preço final por produto, já com a margem aplicada. Use na hora de fazer o pedido.</p>
+        <div class="field-row" style="margin-bottom:.75rem;">
+          <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
+          <input id="precoFinalProdFiltro" placeholder="Buscar produto…" oninput="renderPrecoFinal()"/>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);">
+                <th style="text-align:left;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Produto</th>
+                <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço final</th>
+              </tr>
+            </thead>
+            <tbody id="precoFinalTableBody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -1190,6 +1211,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <select id="invPapel">
               <option value="manager">Gerente (acesso completo da loja)</option>
               <option value="pedidos">Apenas Pedidos (só lança pedido)</option>
+              <option value="supervisor">Supervisor(a) (pedido + preço final, várias lojas)</option>
               <option value="comprador">Comprador (compra consolidada de várias lojas)</option>
             </select>
           </div>
@@ -1545,6 +1567,8 @@ function renderSeletoresCategoriaSelect(){
   if(histF){const val=histF.value;histF.innerHTML=optsComTodasCategorias;histF.value=lista.find(c=>c.chave===val)?val:'';}
   const gerF=el('gerProdCatFilter');
   if(gerF){const val=gerF.value;gerF.innerHTML=optsComTodasCategorias;gerF.value=lista.find(c=>c.chave===val)?val:'';}
+  const precoFinalF=el('precoFinalCatFilter');
+  if(precoFinalF){const val=precoFinalF.value;precoFinalF.innerHTML=optsComTodas;precoFinalF.value=lista.find(c=>c.chave===val)?val:'';}
 }
 
 /* ── STATE ── */
@@ -1801,7 +1825,7 @@ async function verificarConviteRegistro(){
       conviteDetectado=data;
       lojaField.style.display='none';
       msgEl.style.display='block';
-      const papelTxt=data.role==='pedidos'?'pessoa de pedidos':data.role==='comprador'?'comprador(a)':'gerente';
+      const papelTxt=data.role==='pedidos'?'pessoa de pedidos':data.role==='comprador'?'comprador(a)':data.role==='supervisor'?'supervisor(a) de pedidos':'gerente';
       msgEl.textContent='✅ Convite encontrado! Você vai entrar como '+papelTxt+' de "'+((data.lojas&&data.lojas.nome)||'loja')+'".';
     } else {
       conviteDetectado=null;lojaField.style.display='';msgEl.style.display='none';
@@ -1859,7 +1883,7 @@ async function doRegister(){
   });
   if(perfilError){ mostrarErroRegistro(traduzErro(perfilError,'Erro ao criar perfil: ')); return; }
 
-  if(roleFinal==='comprador'||roleFinal==='manager'){
+  if(roleFinal==='comprador'||roleFinal==='manager'||roleFinal==='supervisor'){
     // Gerente também precisa de uma linha em loja_membros desde o início — é o que
     // permite o dono conceder acesso a lojas extras depois (ver "Usuários") e é o
     // que a Edge Function de assinatura usa pra autorizar o gerente a pagar.
@@ -1919,10 +1943,11 @@ async function carregarPerfilEEntrar(userId){
 async function enterApp(){
   el('loginScreen').style.display='none';
   el('appShell').style.display='flex';el('appShell').style.flexDirection='column';
-  if((currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='comprador')&&currentUser.lojaId){currentLojaId=currentUser.lojaId;}
+  if((currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='comprador'||currentUser.role==='supervisor')&&currentUser.lojaId){currentLojaId=currentUser.lojaId;}
   const ehGerente=currentUser.role==='manager';
   const ehPedidos=currentUser.role==='pedidos';
   const ehComprador=currentUser.role==='comprador';
+  const ehSupervisor=currentUser.role==='supervisor';
   el('sideUsuarios').style.display=ehGerente?'none':'';
   el('sideLoja').style.display=ehGerente?'none':'';
   await carregarMinhasLojas();
@@ -1932,6 +1957,17 @@ async function enterApp(){
     });
     document.querySelectorAll('.nav-btn').forEach(btn=>{
       btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos')?'':'none';
+    });
+  }
+  if(ehSupervisor){
+    // Supervisor(a): faz pedido em qualquer uma das lojas dela (multi-loja, igual gerente)
+    // e vê o preço final por produto, mas nada de Compras/Despesas/Fornecedores/Preços/
+    // Usuários/Loja/Assinatura — só Início, Pedidos e Preço Final.
+    document.querySelectorAll('.side-btn').forEach(btn=>{
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal')?'':'none';
+    });
+    document.querySelectorAll('.nav-btn').forEach(btn=>{
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal')?'':'none';
     });
   }
   if(ehComprador){
@@ -2032,7 +2068,7 @@ function renderStoreModalList(){
   // Gerente agora também pode ter mais de uma loja liberada pelo dono (ver aba Usuários) —
   // "lojas" já vem correta pra ele via carregarMinhasLojas() (lê loja_membros por user_id,
   // sem filtrar por papel), então só precisa deixar de restringir a lista aqui.
-  let available=((currentUser.role==='owner'||currentUser.role==='manager')?lojas:lojas.filter(l=>l.id===currentUser.lojaId)).slice();
+  let available=((currentUser.role==='owner'||currentUser.role==='manager'||currentUser.role==='supervisor')?lojas:lojas.filter(l=>l.id===currentUser.lojaId)).slice();
   available=available.map(l=>({...l,donoNome:souAdmin?(donoPorLojaSwitcher[l.id]||'Sem dono definido'):null}));
   available.sort((a,b)=>{
     if(souAdmin){
@@ -2094,7 +2130,7 @@ function refreshHeader(){
   const userInfoEl=el('headerUserInfo');
   let papel='';
   if(userInfoEl&&currentUser){
-    papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':currentUser.role==='pedidos'?'Apenas Pedidos':currentUser.role==='comprador'?'Comprador':'Gerente');
+    papel=currentUser.isAdmin?'Admin master':(currentUser.role==='owner'?'Dono':currentUser.role==='pedidos'?'Apenas Pedidos':currentUser.role==='comprador'?'Comprador':currentUser.role==='supervisor'?'Supervisor(a)':'Gerente');
     userInfoEl.textContent=capitalizarNome(currentUser.nome)+' · '+papel;
   }
   const sbNome=el('sidebarLojaNome');
@@ -2366,11 +2402,11 @@ async function checkSubscription(){
   atualizarLabelsPreco();
   updateSubStatus();
   atualizarAvisoVencimento();
-  const souApenasPedidos=currentUser&&currentUser.role==='pedidos';
+  const souApenasPedidos=currentUser&&(currentUser.role==='pedidos'||currentUser.role==='supervisor');
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
     if(souApenasPedidos){
-      // Apenas-pedidos não mexe com pagamento — só perde acesso às abas operacionais
+      // Apenas-pedidos (e supervisor(a)) não mexem com pagamento — só perdem acesso às abas operacionais
       el('subWall').style.display='none';
       const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
       if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
@@ -2416,7 +2452,7 @@ function atualizarAvisoVencimento(){
   }
 }
 function atualizarBloqueioMenu(){
-  const bloquear=acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos');
+  const bloquear=acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='supervisor');
   document.querySelectorAll('[data-tab="pedidos"],[data-tab="compras"]').forEach(btn=>{
     btn.style.opacity=bloquear?'.4':'';
     btn.title=bloquear?'Assinatura vencida — acesso bloqueado':'';
@@ -2507,25 +2543,30 @@ function renderPrecoHistorico(){
 }
 
 /* ── ALL TABS ── */
-const ALL_TABS=['home','pedidos','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
+const ALL_TABS=['home','pedidos','precofinal','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
 function chaveLS(base){
   return (currentUser&&currentUser.id)?base+'_'+currentUser.id:base;
 }
 function abaRestauravelParaUsuario(tab){
   if(!currentUser)return tab==='home';
   if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
+  if(currentUser.role==='supervisor')return tab==='home'||tab==='pedidos'||tab==='precofinal';
   if(currentUser.role==='comprador')return tab==='home'||tab==='compras';
   if(tab==='master')return !!currentUser.isAdmin;
   if(currentUser.role==='manager')return !['usuarios','loja'].includes(tab);
   return true;
 }
 function switchTab(tab){
-  if(acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos')&&(tab==='pedidos'||tab==='compras')){
+  if(acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='supervisor')&&(tab==='pedidos'||tab==='compras')){
     showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
     return;
   }
   if(currentUser&&currentUser.role==='pedidos'&&tab!=='home'&&tab!=='pedidos'){
     showToast('Seu acesso é só pra fazer pedidos.');
+    return;
+  }
+  if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'){
+    showToast('Seu acesso é só pra Pedidos e Preço Final.');
     return;
   }
   if(currentUser&&currentUser.role==='comprador'&&tab!=='home'&&tab!=='compras'){
@@ -2541,11 +2582,12 @@ function switchTab(tab){
   if(tab==='precos'){renderPrecosView();}
   if(tab==='gerenciar'){switchGerenciarView(gerenciarViewAtual);}
   if(tab==='historico')renderHistoricoCompras();
+  if(tab==='precofinal')renderPrecoFinal();
 
   if(tab==='pedidos'){
     switchView(localStorage.getItem(chaveLS('ceasa_pedido_view'))||'tabela');
     try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();atualizarAvisoData();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
-    const ehPedidos=currentUser&&currentUser.role==='pedidos';
+    const ehPedidos=currentUser&&(currentUser.role==='pedidos'||currentUser.role==='supervisor');
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
     const relSem=el('relatorioSemanalPedidos');
     if(relSem){relSem.style.display=ehPedidos?'block':'none';if(ehPedidos)renderRelatorioSemanalPedidos();}
@@ -3995,7 +4037,7 @@ async function saveUsuario(){
     }catch(e){showToast(traduzErro(e,'Erro: '));return;}
   }
 
-  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':'gerenciar';
+  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':papel==='supervisor'?'lançar pedidos e ver o preço final':'gerenciar';
   const msg=`Oi, ${nome}! Você foi convidado(a) para ${descPapel} a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente.`;
   const emailBtn=el('conviteEmailBtn');
   emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — Hortiz')+'&body='+encodeURIComponent(msg);
@@ -4021,17 +4063,18 @@ async function renderUsuarios(){
   try{
     const lojaIds=lojas.map(l=>l.id);
     const [{data:gerentes},{data:convites}]=await Promise.all([
-      lojaIds.length?db.from('perfis').select('*').in('loja_id',lojaIds).in('role',['manager','pedidos','comprador']).order('ordem'):Promise.resolve({data:[]}),
+      lojaIds.length?db.from('perfis').select('*').in('loja_id',lojaIds).in('role',['manager','pedidos','comprador','supervisor']).order('ordem'):Promise.resolve({data:[]}),
       db.from('convites_usuario').select('*, lojas(nome)').eq('criado_por',currentUser.id).order('created_at',{ascending:false})
     ]);
     gerentesCache=gerentes||[];
-    // Gerente (role='manager') pode ter mais de uma loja liberada — busca todas as
-    // linhas de loja_membros dele, não só a loja "ativa" (perfis.loja_id). "Apenas
-    // pedidos" e "comprador" continuam de loja única / vínculo próprio, sem mudança.
-    const idsGerentesManager=gerentesCache.filter(g=>g.role==='manager').map(g=>g.id);
+    // Gerente (role='manager') e Supervisor(a) (role='supervisor') podem ter mais de
+    // uma loja liberada — busca todas as linhas de loja_membros deles, não só a loja
+    // "ativa" (perfis.loja_id). "Apenas pedidos" e "comprador" continuam de loja
+    // única / vínculo próprio, sem mudança.
+    const idsMultiLoja=gerentesCache.filter(g=>g.role==='manager'||g.role==='supervisor').map(g=>g.id);
     lojasPorGerente={};
-    if(idsGerentesManager.length){
-      const {data:membros}=await db.from('loja_membros').select('user_id,loja_id').eq('role','manager').in('user_id',idsGerentesManager);
+    if(idsMultiLoja.length){
+      const {data:membros}=await db.from('loja_membros').select('user_id,loja_id').in('role',['manager','supervisor']).in('user_id',idsMultiLoja);
       (membros||[]).forEach(m=>{(lojasPorGerente[m.user_id]=lojasPorGerente[m.user_id]||[]).push(m.loja_id);});
     }
     let html='';
@@ -4042,10 +4085,11 @@ async function renderUsuarios(){
       const ehPedidos=g.role==='pedidos';
       const ehComprador=g.role==='comprador';
       const ehManager=g.role==='manager';
-      const rotulo=ehComprador?'Comprador':ehPedidos?'Apenas Pedidos':'Gerente';
-      const lojasDele=ehManager?(lojasPorGerente[g.id]||[g.loja_id]):[];
+      const ehSupervisor=g.role==='supervisor';
+      const rotulo=ehComprador?'Comprador':ehPedidos?'Apenas Pedidos':ehSupervisor?'Supervisor(a)':'Gerente';
+      const lojasDele=(ehManager||ehSupervisor)?(lojasPorGerente[g.id]||[g.loja_id]):[];
       const nomesLojasDele=lojasDele.map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
-      const checklistLojas=ehManager?lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
+      const checklistLojas=(ehManager||ehSupervisor)?lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
           <input type="checkbox" ${lojasDele.includes(l.id)?'checked':''} onchange="toggleLojaGerente('${g.id}',${l.id},this.checked,this)"> ${esc(l.nome)}
         </label>`).join(''):'';
       html+=`<div class="data-card">
@@ -4056,18 +4100,18 @@ async function renderUsuarios(){
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${esc(g.nome)}</p>
           <p style="font-size:12px;color:var(--text2);">${esc(g.email)}</p>
-          <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${ehManager?(nomesLojasDele||lojaNome):lojaNome}</p>
+          <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${(ehManager||ehSupervisor)?(nomesLojasDele||lojaNome):lojaNome}</p>
           ${lojas.length>1&&ehPedidos?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
-          ${lojas.length>1&&ehManager?`<div id="gerLojaChk-${g.id}" style="display:${gerentesEditAbertos.has(g.id)?'block':'none'};margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
+          ${lojas.length>1&&(ehManager||ehSupervisor)?`<div id="gerLojaChk-${g.id}" style="display:${gerentesEditAbertos.has(g.id)?'block':'none'};margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
         </div>
-        ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':'badge-manager',rotulo)}
-        ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${ehManager?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
+        ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':ehSupervisor?'badge-manager':'badge-manager',rotulo)}
+        ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${(ehManager||ehSupervisor)?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
         ${ehComprador?`<button class="btn-danger-soft btn-sm" onclick="removerVinculoComprador('${g.id}',${g.loja_id},'${nomeEscapado}')" title="Desvincular desta loja"><i class="ti ti-unlink"></i></button>`:`<button class="btn-danger-soft btn-sm" onclick="removerGerente('${g.id}','${nomeEscapado}')" title="Remover acesso"><i class="ti ti-trash"></i></button>`}
       </div>`;
     });
     (convites||[]).filter(c=>!c.usado).forEach(c=>{
       const lojaNome=(c.lojas&&c.lojas.nome)||'—';
-      const rotuloPapel=c.role==='pedidos'?'Apenas Pedidos':'Gerente';
+      const rotuloPapel=c.role==='pedidos'?'Apenas Pedidos':c.role==='comprador'?'Comprador':c.role==='supervisor'?'Supervisor(a)':'Gerente';
       html+=`<div class="data-card" style="opacity:.8;">
         <div style="flex:1;min-width:0;">
           <p style="font-size:14px;font-weight:600;">${esc(c.email)}</p>
@@ -6643,6 +6687,52 @@ function renderPrecosMedia(){
 </tr>`;
   }).join('')
   :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível. Confirme compras para alimentar o histórico.</td></tr>`;
+}
+
+// Versão enxuta da tabela de preços, só pro papel 'supervisor': mesmo cálculo de
+// preço final (custo médio + margem) de renderPrecosMedia(), mas SEM mostrar custo,
+// % de margem nem valor de margem em R$ — só produto e preço final, sem edição.
+function renderPrecoFinal(){
+  const catF      = el('precoFinalCatFilter')?el('precoFinalCatFilter').value:'';
+  const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
+
+  const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
+  compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
+    if(!myHist.find(h=>h.produto===c.produto&&h.data===currentDate&&h.valor===c.valorUnit)){
+      myHist.push({produto:c.produto,categoria:c.categoria,data:currentDate,valor:c.valorUnit,fornecedor:c.fornecedor,lojaId:currentLojaId});
+    }
+  });
+
+  const byProd={};
+  myHist.forEach(h=>{
+    if(!byProd[h.produto]) byProd[h.produto]={categoria:h.categoria,valores:[]};
+    byProd[h.produto].valores.push(h.custoUnitario||h.valor);
+  });
+
+  let rows=Object.keys(byProd).map(prod=>{
+    const vals=byProd[prod].valores;
+    const media=vals.reduce((a,v)=>a+v,0)/vals.length;
+    return {produto:prod,categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media)};
+  });
+
+  if(catF)       rows=rows.filter(r=>r.categoria===catF);
+  if(prodFiltro) rows=rows.filter(r=>r.produto.toLowerCase().includes(prodFiltro));
+  rows.sort((a,b)=>a.produto.localeCompare(b.produto,'pt-BR'));
+
+  const body=el('precoFinalTableBody');
+  if(!body)return;
+  body.innerHTML=rows.length?rows.map(r=>`<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:8px 10px;">
+    <div style="display:flex;align-items:center;gap:7px;">
+      <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
+      <span style="font-size:13px;font-weight:500;">${esc(r.produto)}</span>
+    </div>
+  </td>
+  <td style="padding:8px 10px;text-align:right;white-space:nowrap;">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">${fmt(r.precoFinal)}</span>
+  </td>
+</tr>`).join('')
+  :`<tr><td colspan="2" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível ainda.</td></tr>`;
 }
 
 function precosPreview(inp, tipo, pid, media){
