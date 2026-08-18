@@ -985,7 +985,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="card" style="margin-bottom:1rem;">
             <div class="card-label">Margem global</div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
-              <input type="range" id="margemRange" min="10" max="200" value="40" oninput="onMargemChange()" style="flex:1;accent-color:var(--accent);"/>
+              <input type="range" id="margemRange" min="10" max="200" value="40" oninput="onMargemChange()" onchange="salvarMargemGlobal()" style="flex:1;accent-color:var(--accent);"/>
               <span id="margemLabel" style="font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:48px;">40%</span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -6369,6 +6369,17 @@ async function carregarDadosDaLoja(){
       margData.forEach(m=>{margemCustom[m.produto]={tipo:m.tipo,valor:parseFloat(m.valor)};});
     }
 
+    // Margem global (o slider da aba Preços) — agora persistida por loja em vez de
+    // resetar pro padrão de 40% a cada carregamento de página.
+    try{
+      const {data:mgData,error:mgErr}=await db.from('margem_global').select('percentual').eq('loja_id',currentLojaId).maybeSingle();
+      const pct=(!mgErr&&mgData&&mgData.percentual!=null)?Math.round(parseFloat(mgData.percentual)):40;
+      const mgRange=el('margemRange');
+      if(mgRange)mgRange.value=pct;
+      const mgLabel=el('margemLabel');
+      if(mgLabel)mgLabel.textContent=pct+'%';
+    }catch(e){}
+
   }catch(e){
     showToast('Aviso: não foi possível sincronizar com o servidor. Trabalhando offline.');
   }
@@ -6521,6 +6532,22 @@ function renderHistoricoCompras(){
 function onMargemChange(){
   el('margemLabel').textContent=el('margemRange').value+'%';
   renderPrecosMedia();
+}
+let _margemGlobalSalvarTimeout=null;
+async function salvarMargemGlobal(){
+  // Disparado no "change" do slider (solta o mouse/toque), não no "input" (arrastando) —
+  // evita gravar no banco a cada pixel de movimento. Um pequeno debounce extra
+  // protege contra cliques de teclado repetidos (setas) indo um por um.
+  const pct=parseInt(el('margemRange').value);
+  if(isNaN(pct))return;
+  clearTimeout(_margemGlobalSalvarTimeout);
+  _margemGlobalSalvarTimeout=setTimeout(async()=>{
+    try{
+      const {error}=await db.from('margem_global').upsert({loja_id:currentLojaId,percentual:pct,updated_at:new Date().toISOString()},{onConflict:'loja_id'});
+      if(error){showToast(traduzErro(error,'Erro ao salvar margem: '));return;}
+      showToast('Margem global salva: '+pct+'%');
+    }catch(e){showToast('Erro ao salvar margem global.');}
+  },300);
 }
 async function aplicarMargemTodos(){
   const tipo=el('margemGlobalTipo').value;
