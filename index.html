@@ -4089,9 +4089,11 @@ async function renderUsuarios(){
       const rotulo=ehComprador?'Comprador':ehPedidos?'Apenas Pedidos':ehSupervisor?'Supervisor(a)':'Gerente';
       const lojasDele=(ehManager||ehSupervisor)?(lojasPorGerente[g.id]||[g.loja_id]):[];
       const nomesLojasDele=lojasDele.map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
-      const checklistLojas=(ehManager||ehSupervisor)?lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
-          <input type="checkbox" ${lojasDele.includes(l.id)?'checked':''} onchange="toggleLojaGerente('${g.id}',${l.id},this.checked,this)"> ${esc(l.nome)}
-        </label>`).join(''):'';
+      // Recarregar a lista inteira (renderUsuarios) sempre reseta a seleção pendente
+      // pra bater com o que está salvo no banco — evita mostrar edição não salva de
+      // uma sessão anterior como se já tivesse sido confirmada.
+      if(ehManager||ehSupervisor)lojasPendentes[g.id]=[...lojasDele];
+      const checklistLojas=(ehManager||ehSupervisor)?checklistLojasHtml(g.id):'';
       html+=`<div class="data-card">
         <div style="display:flex;flex-direction:column;gap:2px;">
           <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===0?'disabled':''} onclick="moverGerente('${g.id}',-1)" title="Mover pra cima"><i class="ti ti-chevron-up"></i></button>
@@ -4102,7 +4104,13 @@ async function renderUsuarios(){
           <p style="font-size:12px;color:var(--text2);">${esc(g.email)}</p>
           <p id="gerLojaTxt-${g.id}" style="font-size:12px;color:var(--text2);margin-top:2px;">${(ehManager||ehSupervisor)?(nomesLojasDele||lojaNome):lojaNome}</p>
           ${lojas.length>1&&ehPedidos?`<select id="gerLojaSel-${g.id}" onchange="reatribuirGerente('${g.id}',this.value)" style="display:none;font-size:12px;padding:3px 6px;margin-top:4px;max-width:220px;width:100%;">${opcoesLoja}</select>`:''}
-          ${lojas.length>1&&(ehManager||ehSupervisor)?`<div id="gerLojaChk-${g.id}" style="display:${gerentesEditAbertos.has(g.id)?'block':'none'};margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;">${checklistLojas}</div>`:''}
+          ${lojas.length>1&&(ehManager||ehSupervisor)?`<div id="gerLojaChk-${g.id}" style="display:${gerentesEditAbertos.has(g.id)?'block':'none'};margin-top:6px;padding:.5rem .625rem;background:var(--bg3);border-radius:var(--radius-sm);">
+            <div id="gerLojaChkList-${g.id}" style="max-height:160px;overflow-y:auto;">${checklistLojas}</div>
+            <div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+              <button class="btn-primary btn-sm" id="gerLojaSalvarBtn-${g.id}" onclick="salvarLojasGerente('${g.id}')" style="flex:1;"><i class="ti ti-device-floppy"></i> Salvar</button>
+              <button class="btn-ghost btn-sm" id="gerLojaCancelarBtn-${g.id}" onclick="cancelarLojasGerente('${g.id}')" style="flex:1;">Cancelar</button>
+            </div>
+          </div>`:''}
         </div>
         ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':ehSupervisor?'badge-manager':'badge-manager',rotulo)}
         ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${(ehManager||ehSupervisor)?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
@@ -4125,6 +4133,7 @@ async function renderUsuarios(){
 }
 let gerentesCache=[];
 let lojasPorGerente={};
+let lojasPendentes={}; // seleção sendo editada no checklist "Editar lojas", ainda não salva
 async function moverGerente(id,direcao){
   const idx=gerentesCache.findIndex(g=>g.id===id);
   const outroIdx=idx+direcao;
@@ -4142,6 +4151,12 @@ async function moverGerente(id,direcao){
 }
 
 let gerentesEditAbertos=new Set();
+function checklistLojasHtml(perfilId){
+  const pend=lojasPendentes[perfilId]||[];
+  return lojas.map(l=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;">
+      <input type="checkbox" ${pend.includes(l.id)?'checked':''} onchange="marcarLojaPendente('${perfilId}',${l.id},this.checked)"> ${esc(l.nome)}
+    </label>`).join('');
+}
 function toggleEditGerente(perfilId){
   const txt=el('gerLojaTxt-'+perfilId);
   const sel=el('gerLojaSel-'+perfilId);
@@ -4149,18 +4164,26 @@ function toggleEditGerente(perfilId){
   if(!txt)return;
   if(sel){txt.style.display='none';sel.style.display='';sel.focus();return;}
   if(chk){
-    // Marca se o painel de checkboxes ficou aberto — renderUsuarios() reconstrói
-    // o HTML inteiro a cada clique numa loja (pra refletir o estado real do banco),
-    // e sem isso o painel fechava sozinho a cada checkbox marcado/desmarcado,
-    // dando a impressão de que não dava pra selecionar mais de uma loja.
+    // Marca se o painel de checklist ficou aberto — renderUsuarios() reconstrói
+    // o HTML inteiro a cada carregamento da lista, e sem isso o painel fechava
+    // sozinho toda vez que a tela recarregasse no meio de uma edição.
     const abrir=chk.style.display==='none';
+    if(abrir){
+      // Reabrir sempre parte da última seleção SALVA (lojasPorGerente), não de uma
+      // edição pendente que ficou pela metade numa visita anterior — evita reabrir
+      // já mostrando marcações que nunca chegaram a ser confirmadas com "Salvar".
+      lojasPendentes[perfilId]=[...(lojasPorGerente[perfilId]||[])];
+      const list=el('gerLojaChkList-'+perfilId);
+      if(list)list.innerHTML=checklistLojasHtml(perfilId);
+    }
     chk.style.display=abrir?'block':'none';
     if(abrir)gerentesEditAbertos.add(perfilId);else gerentesEditAbertos.delete(perfilId);
     return;
   }
 }
 async function reatribuirGerente(perfilId,novaLojaId){
-  // usado só pra "apenas pedidos" (loja única) — gerente usa toggleLojaGerente (multi-loja)
+  // usado só pra "apenas pedidos" (loja única) — gerente/supervisor(a) usam o
+  // checklist multi-loja (marcarLojaPendente + salvarLojasGerente) em vez disso
   try{
     const {error}=await db.from('perfis').update({loja_id:parseInt(novaLojaId)}).eq('id',perfilId);
     if(error){showToast(traduzErro(error,'Erro ao mover: '));return;}
@@ -4169,38 +4192,87 @@ async function reatribuirGerente(perfilId,novaLojaId){
     renderUsuarios();
   }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
-async function toggleLojaGerente(perfilId,lojaId,marcado,checkboxEl){
-  // Importante: NÃO chama renderUsuarios() aqui. Ele reconstrói a lista inteira de
-  // Equipe (e passa por um "Carregando…" no meio do caminho) — feito a cada
-  // checkbox clicado, isso pisca a tela inteira e dá a impressão de que a página
-  // recarregou e perdeu a seleção, mesmo quando o clique funcionou. Em vez disso,
-  // atualiza só o estado local (lojasPorGerente) e o textinho-resumo desse gerente.
-  if(checkboxEl)checkboxEl.disabled=true;
+function marcarLojaPendente(perfilId,lojaId,marcado){
+  // Só mexe no estado local (lojasPendentes) — nada é gravado no banco até
+  // clicar em "Salvar". É essa a mudança que resolve o problema de marcar
+  // várias lojas e, ao sair e voltar da aba, ver só 1 marcada: antes cada
+  // checkbox gravava na hora (um RPC por clique) sem confirmação explícita.
+  const arr=lojasPendentes[perfilId]=lojasPendentes[perfilId]||[];
+  if(marcado){
+    if(!arr.includes(lojaId))arr.push(lojaId);
+  }else{
+    lojasPendentes[perfilId]=arr.filter(id=>id!==lojaId);
+  }
+}
+async function salvarLojasGerente(perfilId){
+  const saveBtn=el('gerLojaSalvarBtn-'+perfilId);
+  const cancelBtn=el('gerLojaCancelarBtn-'+perfilId);
+  const atuais=lojasPorGerente[perfilId]||[];
+  const pendentes=lojasPendentes[perfilId]||[];
+  const adicionar=pendentes.filter(id=>!atuais.includes(id));
+  const remover=atuais.filter(id=>!pendentes.includes(id));
+  if(!adicionar.length&&!remover.length){
+    toggleEditGerente(perfilId); // nada mudou, só fecha o painel
+    return;
+  }
+  if(saveBtn)saveBtn.disabled=true;
+  if(cancelBtn)cancelBtn.disabled=true;
   try{
-    if(marcado){
+    // Sequencial de propósito (não Promise.all): revogar_loja_gerente recusa tirar
+    // a última loja de alguém, contando quantas linhas existem no momento da
+    // chamada — se disparasse tudo em paralelo, várias remoções concorrentes
+    // poderiam "ver" a mesma contagem antiga e deixar passar uma combinação que
+    // zeraria o acesso da pessoa. Um de cada vez evita essa corrida.
+    for(const lojaId of adicionar){
       const {error}=await db.rpc('conceder_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
-      if(error){showToast(traduzErro(error,'Erro ao liberar loja: '));if(checkboxEl)checkboxEl.checked=false;return;}
-      showToast('Loja liberada pro gerente!');
-      const arr=lojasPorGerente[perfilId]=lojasPorGerente[perfilId]||[];
-      if(!arr.includes(lojaId))arr.push(lojaId);
-    }else{
-      const {error}=await db.rpc('revogar_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
-      if(error){showToast(traduzErro(error,'Erro ao remover acesso: '));if(checkboxEl)checkboxEl.checked=true;return;}
-      showToast('Acesso a essa loja removido.');
-      if(lojasPorGerente[perfilId])lojasPorGerente[perfilId]=lojasPorGerente[perfilId].filter(id=>id!==lojaId);
+      if(error){showToast(traduzErro(error,'Erro ao liberar loja: '));throw error;}
     }
+    for(const lojaId of remover){
+      const {error}=await db.rpc('revogar_loja_gerente',{p_perfil_id:perfilId,p_loja_id:lojaId});
+      if(error){showToast(traduzErro(error,'Erro ao remover acesso: '));throw error;}
+    }
+    lojasPorGerente[perfilId]=[...pendentes];
+    showToast('Lojas atualizadas!');
     const txtEl=el('gerLojaTxt-'+perfilId);
     if(txtEl){
-      const nomes=(lojasPorGerente[perfilId]||[]).map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
+      const nomes=pendentes.map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
       const g=gerentesCache.find(x=>x.id===perfilId);
       const lojaNomeAtiva=(lojas.find(l=>l.id===(g&&g.loja_id))||{}).nome||'—';
       txtEl.textContent=nomes||lojaNomeAtiva;
     }
+    gerentesEditAbertos.delete(perfilId);
+    const chk=el('gerLojaChk-'+perfilId);
+    if(chk)chk.style.display='none';
   }catch(e){
-    showToast(traduzErro(e,'Erro: '));
-    if(checkboxEl)checkboxEl.checked=!marcado;
+    // Deu erro no meio do caminho — alguns toggles podem já ter sido gravados.
+    // Recarrega o estado real do banco pra essa pessoa em vez de confiar no que
+    // ficou pendente localmente, pra não mostrar algo que não bate com o banco.
+    await recarregarLojasDeUmGerente(perfilId);
   }finally{
-    if(checkboxEl)checkboxEl.disabled=false;
+    if(saveBtn)saveBtn.disabled=false;
+    if(cancelBtn)cancelBtn.disabled=false;
+  }
+}
+function cancelarLojasGerente(perfilId){
+  lojasPendentes[perfilId]=[...(lojasPorGerente[perfilId]||[])];
+  const list=el('gerLojaChkList-'+perfilId);
+  if(list)list.innerHTML=checklistLojasHtml(perfilId);
+  toggleEditGerente(perfilId); // fecha o painel sem gravar nada
+}
+async function recarregarLojasDeUmGerente(perfilId){
+  try{
+    const {data:membros}=await db.from('loja_membros').select('loja_id').eq('user_id',perfilId).in('role',['manager','supervisor']);
+    lojasPorGerente[perfilId]=(membros||[]).map(m=>m.loja_id);
+  }catch(e){}
+  lojasPendentes[perfilId]=[...(lojasPorGerente[perfilId]||[])];
+  const list=el('gerLojaChkList-'+perfilId);
+  if(list)list.innerHTML=checklistLojasHtml(perfilId);
+  const txtEl=el('gerLojaTxt-'+perfilId);
+  if(txtEl){
+    const nomes=(lojasPorGerente[perfilId]||[]).map(id=>(lojas.find(l=>l.id===id)||{}).nome).filter(Boolean).join(', ');
+    const g=gerentesCache.find(x=>x.id===perfilId);
+    const lojaNomeAtiva=(lojas.find(l=>l.id===(g&&g.loja_id))||{}).nome||'—';
+    txtEl.textContent=nomes||lojaNomeAtiva;
   }
 }
 async function removerVinculoComprador(perfilId,lojaId,nome){
