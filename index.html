@@ -408,7 +408,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       </div>
       <div class="side-btn active" data-tab="home"        onclick="switchTab('home')"><i class="ti ti-home"></i> Início</div>
       <div class="side-btn" data-tab="pedidos"      onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i> Pedidos</div>
-      <div class="side-btn" data-tab="precofinal"   onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i> Preço Final</div>
+      <div class="side-btn" data-tab="precofinal"   onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i> Preço por Produto</div>
       <div class="side-btn" data-tab="relatoriosfinal" onclick="switchTab('relatoriosfinal')" style="display:none;"><i class="ti ti-chart-bar"></i> Relatórios</div>
       <div class="side-btn" data-tab="compras"      onclick="switchTab('compras')"><i class="ti ti-map-pin"></i> Compras</div>
       <div class="side-btn" data-tab="despesas"     onclick="switchTab('despesas')"><i class="ti ti-receipt"></i> Despesas</div>
@@ -463,11 +463,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="quick-card" data-tab="despesas" onclick="switchTab('despesas')"><i class="ti ti-receipt"></i><span>Despesas</span></div>
           <div class="quick-card" data-tab="fornecedores" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i><span>Fornecedores</span></div>
           <div class="quick-card" data-tab="relatorios" onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
-          <div class="quick-card" data-tab="precofinal" onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i><span>Preço Final</span></div>
+          <div class="quick-card" data-tab="precofinal" onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i><span>Preço por Produto</span></div>
           <div class="quick-card" data-tab="relatoriosfinal" onclick="switchTab('relatoriosfinal')" style="display:none;"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
-          <div class="home-section" style="margin:0;"><i class="ti ti-chart-pie"></i> Resumo do mês por categoria</div>
+          <div class="home-section" style="margin:0;" id="homeResumoTitulo"><i class="ti ti-chart-pie"></i> Resumo do mês por categoria</div>
           <div style="display:flex;align-items:center;gap:6px;">
             <button class="btn-icon" onclick="mudarHomeMes(-1)" title="Mês anterior"><i class="ti ti-chevron-left"></i></button>
             <span id="homeMesLabel" style="font-size:12px;color:var(--text2);min-width:90px;text-align:center;"></span>
@@ -560,22 +560,12 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
           <input id="precoFinalProdFiltro" placeholder="Buscar produto…" oninput="renderPrecoFinal()"/>
         </div>
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr style="border-bottom:1px solid var(--border);">
-                <th style="text-align:left;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Produto</th>
-                <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço final</th>
-              </tr>
-            </thead>
-            <tbody id="precoFinalTableBody"></tbody>
-          </table>
-        </div>
+        <div id="precoFinalTableBody" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));column-gap:28px;"></div>
       </section>
 
       <!-- RELATÓRIOS (só pra Supervisor(a) — valor final, sem custo/margem) -->
       <section id="tab-relatoriosfinal" style="display:none;">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Valor dos pedidos lançados, calculado pelo preço final de cada produto (não é o custo de compra).</p>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Valor dos pedidos lançados, calculado pelo preço por produto (não é o custo de compra).</p>
         <div class="stat-grid" style="margin-bottom:.875rem;" id="statGridRelatorioFinalMes">
           <div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total/mês</div><div class="stat-value" style="color:var(--accent);" id="rfTotalMes">R$ 0</div></div>
         </div>
@@ -1240,7 +1230,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <select id="invPapel">
               <option value="manager">Gerente (acesso completo da loja)</option>
               <option value="pedidos">Apenas Pedidos (só lança pedido)</option>
-              <option value="supervisor">Supervisor(a) (pedido + preço final, várias lojas)</option>
+              <option value="supervisor">Supervisor(a) (pedido + preço por produto, várias lojas)</option>
               <option value="comprador">Comprador (compra consolidada de várias lojas)</option>
             </select>
           </div>
@@ -1994,7 +1984,7 @@ async function enterApp(){
   if(ehSupervisor){
     // Supervisor(a): faz pedido em qualquer uma das lojas dela (multi-loja, igual gerente)
     // e vê o preço de venda por produto, mas nada de Compras/Despesas/Fornecedores/Preços/
-    // Usuários/Loja/Assinatura — só Início, Pedidos, Preço Final e Relatórios.
+    // Usuários/Loja/Assinatura — só Início, Pedidos, Preço por Produto e Relatórios.
     document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
       btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')?'':'none';
     });
@@ -2005,7 +1995,7 @@ async function enterApp(){
     });
   }
   if(!ehPedidos&&!ehSupervisor&&!ehComprador){
-    // Dono/Gerente: os dois atalhos exclusivos da Supervisor(a) (Preço Final e
+    // Dono/Gerente: os dois atalhos exclusivos da Supervisor(a) (Preço por Produto e
     // o Relatórios "valor final") ficam escondidos na Início — quem já tem o
     // relatório de custo completo não precisa do atalho pro relatório simplificado.
     document.querySelectorAll('.quick-card').forEach(btn=>{
@@ -2214,13 +2204,33 @@ function renderHome(){
   el('homeMesLabel').textContent=MESES_PT[homeResumoMes]+'/'+homeResumoAno;
 
   // pie
-  const myCompras=compras.filter(c=>{
-    if(c.lojaId!==currentLojaId||!c.data)return false;
-    const [y,m]=c.data.split('-').map(Number);
-    return y===homeResumoAno&&(m-1)===homeResumoMes;
-  });
   const listaCat=listaCatComFallback();
-  const totais=listaCat.map(c=>myCompras.filter(x=>x.categoria===c.chave).reduce((a,x)=>a+x.qtd*x.valorUnit,0));
+  const tituloResumo=el('homeResumoTitulo');
+  let totais;
+  if(currentUser&&currentUser.role==='supervisor'){
+    // Supervisor(a) não tem acesso a custo/margem — o resumo do mês reflete o
+    // preço por produto (valor de venda) dos pedidos lançados, não o custo de
+    // compra (fica consistente com a aba Relatórios dela, que usa a mesma conta).
+    if(tituloResumo)tituloResumo.innerHTML='<i class="ti ti-chart-pie"></i> Resumo do mês por categoria (preço por produto)';
+    const mapa=mapaPrecoFinalPorProduto();
+    const myPedidos=itensPedido.filter(i=>{
+      if(i.lojaId!==currentLojaId||!i.data)return false;
+      const [y,m]=i.data.split('-').map(Number);
+      return y===homeResumoAno&&(m-1)===homeResumoMes;
+    });
+    totais=listaCat.map(c=>myPedidos.filter(i=>i.categoria===c.chave).reduce((a,i)=>{
+      const info=mapa[i.produto];
+      return a+(info?i.qtd*info.precoFinal:0);
+    },0));
+  } else {
+    if(tituloResumo)tituloResumo.innerHTML='<i class="ti ti-chart-pie"></i> Resumo do mês por categoria';
+    const myCompras=compras.filter(c=>{
+      if(c.lojaId!==currentLojaId||!c.data)return false;
+      const [y,m]=c.data.split('-').map(Number);
+      return y===homeResumoAno&&(m-1)===homeResumoMes;
+    });
+    totais=listaCat.map(c=>myCompras.filter(x=>x.categoria===c.chave).reduce((a,x)=>a+x.qtd*x.valorUnit,0));
+  }
   const cores=listaCat.map(c=>corCat(c.chave));
   const total=totais.reduce((a,v)=>a+v,0);
   el('homePieLegend').innerHTML=listaCat.map((c,i)=>`<div class="legend-row"><div class="legend-dot" style="background:${cores[i]}"></div><span>${esc(c.nome)}</span><span class="legend-val">${fmt(totais[i])}</span></div>`).join('')
@@ -2600,7 +2610,7 @@ function switchTab(tab){
     return;
   }
   if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'&&tab!=='relatoriosfinal'){
-    showToast('Seu acesso é só pra Pedidos, Preço Final e Relatórios.');
+    showToast('Seu acesso é só pra Pedidos, Preço por Produto e Relatórios.');
     return;
   }
   if(currentUser&&currentUser.role==='comprador'&&tab!=='home'&&tab!=='compras'){
@@ -4076,7 +4086,7 @@ async function saveUsuario(){
     }catch(e){showToast(traduzErro(e,'Erro: '));return;}
   }
 
-  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':papel==='supervisor'?'lançar pedidos e ver o preço final':'gerenciar';
+  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':papel==='supervisor'?'lançar pedidos e ver o preço por produto':'gerenciar';
   const msg=`Oi, ${nome}! Você foi convidado(a) para ${descPapel} a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente.`;
   const emailBtn=el('conviteEmailBtn');
   emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — Hortiz')+'&body='+encodeURIComponent(msg);
@@ -4343,7 +4353,7 @@ async function trocarPapelGerente(perfilId,nome,papelAtual){
   const novoPapel=papelAtual==='manager'?'supervisor':'manager';
   const rotuloNovo=novoPapel==='supervisor'?'Supervisor(a)':'Gerente';
   const rotuloAtual=papelAtual==='supervisor'?'Supervisor(a)':'Gerente';
-  if(!confirm(`Trocar "${nome}" de ${rotuloAtual} para ${rotuloNovo}?\n\nGerente tem acesso completo à gestão da loja (compras, despesas, preços, equipe etc). Supervisor(a) só lança pedidos e vê o preço final e os relatórios (sem custo/margem). As lojas já liberadas pra essa pessoa continuam as mesmas.`))return;
+  if(!confirm(`Trocar "${nome}" de ${rotuloAtual} para ${rotuloNovo}?\n\nGerente tem acesso completo à gestão da loja (compras, despesas, preços, equipe etc). Supervisor(a) só lança pedidos e vê o preço por produto e os relatórios (sem custo/margem). As lojas já liberadas pra essa pessoa continuam as mesmas.`))return;
   try{
     const {error}=await db.rpc('trocar_papel_gerente',{p_perfil_id:perfilId,p_novo_role:novoPapel});
     if(error){showToast(traduzErro(error,'Erro ao trocar papel: '));return;}
@@ -6843,12 +6853,12 @@ function renderPrecosMedia(){
   :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível. Confirme compras para alimentar o histórico.</td></tr>`;
 }
 
-// Versão enxuta da tabela de preços, só pro papel 'supervisor' (aba "Preço Final"):
+// Versão enxuta da tabela de preços, só pro papel 'supervisor' (aba "Preço por Produto"):
 // mesmo cálculo de preço de venda (custo médio + margem) de renderPrecosMedia(), mas
 // SEM mostrar custo, % de margem nem valor de margem em R$ — só produto e preço, sem edição.
 // Mapa {produto: {categoria, precoFinal}} com o preço de venda de cada produto
 // (custo médio do histórico de compras dessa loja x margem). Reaproveitado pela
-// tabela de "Preço Final" (renderPrecoFinal) e pelo relatório de valores finais
+// tabela de "Preço por Produto" (renderPrecoFinal) e pelo relatório de valores finais
 // da Supervisor(a) (calcRelFinalTotals), pra não duplicar a mesma conta em dois lugares.
 function mapaPrecoFinalPorProduto(){
   const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
@@ -6883,20 +6893,19 @@ function renderPrecoFinal(){
   if(prodFiltro) rows=rows.filter(r=>r.produto.toLowerCase().includes(prodFiltro));
   rows.sort((a,b)=>a.produto.localeCompare(b.produto,'pt-BR'));
 
+  // Layout em grid (até 2 colunas em telas largas, 1 em telas estreitas) em vez
+  // de tabela full-width — com nome de produto curto e preço curto, uma tabela
+  // esticada até a borda da tela deixava um vão enorme entre as duas colunas.
   const body=el('precoFinalTableBody');
   if(!body)return;
-  body.innerHTML=rows.length?rows.map(r=>`<tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:8px 10px;">
-    <div style="display:flex;align-items:center;gap:7px;">
-      <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
-      <span style="font-size:13px;font-weight:500;">${esc(r.produto)}</span>
-    </div>
-  </td>
-  <td style="padding:8px 10px;text-align:right;white-space:nowrap;">
-    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">${fmt(r.precoFinal)}</span>
-  </td>
-</tr>`).join('')
-  :`<tr><td colspan="2" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível ainda.</td></tr>`;
+  body.innerHTML=rows.length?rows.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+    <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
+    <span style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.produto)}</span>
+  </div>
+  <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;flex-shrink:0;">${fmt(r.precoFinal)}</span>
+</div>`).join('')
+  :`<div style="padding:2rem;text-align:center;color:var(--text3);grid-column:1/-1;">Nenhum dado disponível ainda.</div>`;
 }
 
 /* ── RELATÓRIO DE VALORES FINAIS (só pra Supervisor(a)) ──
