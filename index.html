@@ -408,7 +408,8 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       </div>
       <div class="side-btn active" data-tab="home"        onclick="switchTab('home')"><i class="ti ti-home"></i> Início</div>
       <div class="side-btn" data-tab="pedidos"      onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i> Pedidos</div>
-      <div class="side-btn" data-tab="precofinal"   onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i> Preço Cliente</div>
+      <div class="side-btn" data-tab="precofinal"   onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i> Preço Final</div>
+      <div class="side-btn" data-tab="relatoriosfinal" onclick="switchTab('relatoriosfinal')" style="display:none;"><i class="ti ti-chart-bar"></i> Relatórios</div>
       <div class="side-btn" data-tab="compras"      onclick="switchTab('compras')"><i class="ti ti-map-pin"></i> Compras</div>
       <div class="side-btn" data-tab="despesas"     onclick="switchTab('despesas')"><i class="ti ti-receipt"></i> Despesas</div>
       <div class="side-btn" data-tab="fornecedores" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i> Fornecedores</div>
@@ -562,12 +563,38 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <thead>
               <tr style="border-bottom:1px solid var(--border);">
                 <th style="text-align:left;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Produto</th>
-                <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço</th>
+                <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço final</th>
               </tr>
             </thead>
             <tbody id="precoFinalTableBody"></tbody>
           </table>
         </div>
+      </section>
+
+      <!-- RELATÓRIOS (só pra Supervisor(a) — valor final, sem custo/margem) -->
+      <section id="tab-relatoriosfinal" style="display:none;">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Valor dos pedidos lançados, calculado pelo preço final de cada produto (não é o custo de compra).</p>
+        <div class="stat-grid" style="margin-bottom:.875rem;" id="statGridRelatorioFinalMes">
+          <div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total/mês</div><div class="stat-value" style="color:var(--accent);" id="rfTotalMes">R$ 0</div></div>
+        </div>
+        <div class="sh">Comparativo por semana e categoria (valor final)</div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.875rem;">
+          <table style="width:100%;min-width:520px;border-collapse:collapse;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border2);">
+                <th style="text-align:left;padding:9px 14px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Categoria</th>
+                <th style="text-align:right;padding:9px 12px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Semana 1<br><span style="font-weight:400;font-size:10px;color:var(--text3);">dias 1–7</span></th>
+                <th style="text-align:right;padding:9px 12px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Semana 2<br><span style="font-weight:400;font-size:10px;color:var(--text3);">dias 8–14</span></th>
+                <th style="text-align:right;padding:9px 12px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Semana 3<br><span style="font-weight:400;font-size:10px;color:var(--text3);">dias 15–21</span></th>
+                <th style="text-align:right;padding:9px 12px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Semana 4<br><span style="font-weight:400;font-size:10px;color:var(--text3);">dias 22–fim</span></th>
+                <th style="text-align:right;padding:9px 12px;font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;">Total</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaSemanasFinalBody"></tbody>
+          </table>
+        </div>
+        <div class="sh">Comparativo semanal — barras lado a lado</div>
+        <div class="card"><div class="chart-wrap"><canvas id="chartSemanalFinal"></canvas></div></div>
       </section>
 
       <!-- COMPRAS -->
@@ -1211,7 +1238,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <select id="invPapel">
               <option value="manager">Gerente (acesso completo da loja)</option>
               <option value="pedidos">Apenas Pedidos (só lança pedido)</option>
-              <option value="supervisor">Supervisor(a) (pedido + preço cliente, várias lojas)</option>
+              <option value="supervisor">Supervisor(a) (pedido + preço final, várias lojas)</option>
               <option value="comprador">Comprador (compra consolidada de várias lojas)</option>
             </select>
           </div>
@@ -1962,12 +1989,12 @@ async function enterApp(){
   if(ehSupervisor){
     // Supervisor(a): faz pedido em qualquer uma das lojas dela (multi-loja, igual gerente)
     // e vê o preço de venda por produto, mas nada de Compras/Despesas/Fornecedores/Preços/
-    // Usuários/Loja/Assinatura — só Início, Pedidos e Preço Cliente.
+    // Usuários/Loja/Assinatura — só Início, Pedidos, Preço Final e Relatórios.
     document.querySelectorAll('.side-btn').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal')?'':'none';
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')?'':'none';
     });
     document.querySelectorAll('.nav-btn').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal')?'':'none';
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')?'':'none';
     });
   }
   if(ehComprador){
@@ -2543,14 +2570,14 @@ function renderPrecoHistorico(){
 }
 
 /* ── ALL TABS ── */
-const ALL_TABS=['home','pedidos','precofinal','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
+const ALL_TABS=['home','pedidos','precofinal','relatoriosfinal','compras','despesas','fornecedores','relatorios','historico','precos','gerenciar','loja','usuarios','assinatura','master'];
 function chaveLS(base){
   return (currentUser&&currentUser.id)?base+'_'+currentUser.id:base;
 }
 function abaRestauravelParaUsuario(tab){
   if(!currentUser)return tab==='home';
   if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
-  if(currentUser.role==='supervisor')return tab==='home'||tab==='pedidos'||tab==='precofinal';
+  if(currentUser.role==='supervisor')return tab==='home'||tab==='pedidos'||tab==='precofinal'||tab==='relatoriosfinal';
   if(currentUser.role==='comprador')return tab==='home'||tab==='compras';
   if(tab==='master')return !!currentUser.isAdmin;
   if(currentUser.role==='manager')return !['usuarios','loja'].includes(tab);
@@ -2565,8 +2592,8 @@ function switchTab(tab){
     showToast('Seu acesso é só pra fazer pedidos.');
     return;
   }
-  if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'){
-    showToast('Seu acesso é só pra Pedidos e Preço Cliente.');
+  if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'&&tab!=='relatoriosfinal'){
+    showToast('Seu acesso é só pra Pedidos, Preço Final e Relatórios.');
     return;
   }
   if(currentUser&&currentUser.role==='comprador'&&tab!=='home'&&tab!=='compras'){
@@ -2583,14 +2610,19 @@ function switchTab(tab){
   if(tab==='gerenciar'){switchGerenciarView(gerenciarViewAtual);}
   if(tab==='historico')renderHistoricoCompras();
   if(tab==='precofinal')renderPrecoFinal();
+  if(tab==='relatoriosfinal'){setTimeout(()=>{renderRelFinalTotals();initBarChartFinal();},50);}
 
   if(tab==='pedidos'){
     switchView(localStorage.getItem(chaveLS('ceasa_pedido_view'))||'tabela');
     try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();atualizarAvisoData();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
     const ehPedidos=currentUser&&(currentUser.role==='pedidos'||currentUser.role==='supervisor');
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
+    // O quadro "Quantidade pedida — últimos 7 dias" só aparece pro papel "Apenas
+    // Pedidos" — a Supervisor(a) agora tem a aba Relatórios própria (valor final
+    // por semana/categoria), que substitui esse quadro com mais informação.
+    const ehApenasPedidos=currentUser&&currentUser.role==='pedidos';
     const relSem=el('relatorioSemanalPedidos');
-    if(relSem){relSem.style.display=ehPedidos?'block':'none';if(ehPedidos)renderRelatorioSemanalPedidos();}
+    if(relSem){relSem.style.display=ehApenasPedidos?'block':'none';if(ehApenasPedidos)renderRelatorioSemanalPedidos();}
     atualizarStickySave();
   }
   if(tab==='master'){renderMaster();}
@@ -4037,7 +4069,7 @@ async function saveUsuario(){
     }catch(e){showToast(traduzErro(e,'Erro: '));return;}
   }
 
-  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':papel==='supervisor'?'lançar pedidos e ver o preço cliente':'gerenciar';
+  const descPapel=papel==='pedidos'?'lançar pedidos':papel==='comprador'?'comprar (consolidado)':papel==='supervisor'?'lançar pedidos e ver o preço final':'gerenciar';
   const msg=`Oi, ${nome}! Você foi convidado(a) para ${descPapel} a loja "${lojaNome}" no Hortiz. Faça seu cadastro em ${APP_URL} usando o e-mail ${email} — o sistema já vai te reconhecer automaticamente.`;
   const emailBtn=el('conviteEmailBtn');
   emailBtn.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Convite — Hortiz')+'&body='+encodeURIComponent(msg);
@@ -4113,6 +4145,7 @@ async function renderUsuarios(){
           </div>`:''}
         </div>
         ${badge(ehComprador?'badge-owner':ehPedidos?'badge-owner':ehSupervisor?'badge-manager':'badge-manager',rotulo)}
+        ${(ehManager||ehSupervisor)?`<button class="btn-ghost btn-sm" onclick="trocarPapelGerente('${g.id}','${nomeEscapado}','${g.role}')" title="Trocar para ${ehManager?'Supervisor(a)':'Gerente'}"><i class="ti ti-switch-horizontal"></i></button>`:''}
         ${lojas.length>1&&!ehComprador?`<button class="btn-ghost btn-sm" onclick="toggleEditGerente('${g.id}')" title="${(ehManager||ehSupervisor)?'Editar lojas':'Editar loja'}"><i class="ti ti-edit"></i></button>`:''}
         ${ehComprador?`<button class="btn-danger-soft btn-sm" onclick="removerVinculoComprador('${g.id}',${g.loja_id},'${nomeEscapado}')" title="Desvincular desta loja"><i class="ti ti-unlink"></i></button>`:`<button class="btn-danger-soft btn-sm" onclick="removerGerente('${g.id}','${nomeEscapado}')" title="Remover acesso"><i class="ti ti-trash"></i></button>`}
       </div>`;
@@ -4295,6 +4328,21 @@ async function removerGerente(perfilId,nome){
     showToast('Acesso removido.');
     renderUsuarios();
   }catch(e){showToast(traduzErro(e,'Erro: '));}
+}
+async function trocarPapelGerente(perfilId,nome,papelAtual){
+  // Só alterna entre Gerente e Supervisor(a) — são os dois papéis multi-loja
+  // (via loja_membros). "Apenas pedidos" e "Comprador" têm modelo de acesso
+  // diferente e não entram nessa troca.
+  const novoPapel=papelAtual==='manager'?'supervisor':'manager';
+  const rotuloNovo=novoPapel==='supervisor'?'Supervisor(a)':'Gerente';
+  const rotuloAtual=papelAtual==='supervisor'?'Supervisor(a)':'Gerente';
+  if(!confirm(`Trocar "${nome}" de ${rotuloAtual} para ${rotuloNovo}?\n\nGerente tem acesso completo à gestão da loja (compras, despesas, preços, equipe etc). Supervisor(a) só lança pedidos e vê o preço final e os relatórios (sem custo/margem). As lojas já liberadas pra essa pessoa continuam as mesmas.`))return;
+  try{
+    const {error}=await db.rpc('trocar_papel_gerente',{p_perfil_id:perfilId,p_novo_role:novoPapel});
+    if(error){showToast(traduzErro(error,'Erro ao trocar papel: '));return;}
+    showToast(`Papel de "${nome}" alterado pra ${rotuloNovo}!`);
+    renderUsuarios();
+  }catch(e){showToast(traduzErro(e,'Erro ao trocar papel: '));}
 }
 
 let gerenciarViewAtual='produtos';
@@ -6788,13 +6836,14 @@ function renderPrecosMedia(){
   :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível. Confirme compras para alimentar o histórico.</td></tr>`;
 }
 
-// Versão enxuta da tabela de preços, só pro papel 'supervisor' (aba "Preço Cliente"):
+// Versão enxuta da tabela de preços, só pro papel 'supervisor' (aba "Preço Final"):
 // mesmo cálculo de preço de venda (custo médio + margem) de renderPrecosMedia(), mas
 // SEM mostrar custo, % de margem nem valor de margem em R$ — só produto e preço, sem edição.
-function renderPrecoFinal(){
-  const catF      = el('precoFinalCatFilter')?el('precoFinalCatFilter').value:'';
-  const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
-
+// Mapa {produto: {categoria, precoFinal}} com o preço de venda de cada produto
+// (custo médio do histórico de compras dessa loja x margem). Reaproveitado pela
+// tabela de "Preço Final" (renderPrecoFinal) e pelo relatório de valores finais
+// da Supervisor(a) (calcRelFinalTotals), pra não duplicar a mesma conta em dois lugares.
+function mapaPrecoFinalPorProduto(){
   const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
   compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
     if(!myHist.find(h=>h.produto===c.produto&&h.data===currentDate&&h.valor===c.valorUnit)){
@@ -6808,11 +6857,20 @@ function renderPrecoFinal(){
     byProd[h.produto].valores.push(h.custoUnitario||h.valor);
   });
 
-  let rows=Object.keys(byProd).map(prod=>{
+  const mapa={};
+  Object.keys(byProd).forEach(prod=>{
     const vals=byProd[prod].valores;
     const media=vals.reduce((a,v)=>a+v,0)/vals.length;
-    return {produto:prod,categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media)};
+    mapa[prod]={categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media)};
   });
+  return mapa;
+}
+function renderPrecoFinal(){
+  const catF      = el('precoFinalCatFilter')?el('precoFinalCatFilter').value:'';
+  const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
+
+  const mapa=mapaPrecoFinalPorProduto();
+  let rows=Object.keys(mapa).map(prod=>({produto:prod,categoria:mapa[prod].categoria,precoFinal:mapa[prod].precoFinal}));
 
   if(catF)       rows=rows.filter(r=>r.categoria===catF);
   if(prodFiltro) rows=rows.filter(r=>r.produto.toLowerCase().includes(prodFiltro));
@@ -6832,6 +6890,82 @@ function renderPrecoFinal(){
   </td>
 </tr>`).join('')
   :`<tr><td colspan="2" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível ainda.</td></tr>`;
+}
+
+/* ── RELATÓRIO DE VALORES FINAIS (só pra Supervisor(a)) ──
+   Mesma estrutura visual do relatório de compras do dono/gerente (Comparativo por
+   semana e categoria), mas em vez de somar o CUSTO das compras, soma a QUANTIDADE
+   pedida (itens_pedido) x o preço final (preço de venda) de cada produto — a
+   supervisora não tem acesso a custo/margem, só ao valor final. */
+function calcRelFinalTotals(de,ate){
+  const mapa=mapaPrecoFinalPorProduto();
+  const rows=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data>=de&&i.data<=ate);
+  const tot={};
+  rows.forEach(i=>{
+    const info=mapa[i.produto];
+    if(!info)return; // sem histórico de compra pra esse produto — sem preço final calculável ainda
+    tot[i.categoria]=(tot[i.categoria]||0)+i.qtd*info.precoFinal;
+  });
+  const total=Object.values(tot).reduce((a,v)=>a+v,0);
+  return{...tot,total};
+}
+function renderRelFinalTotals(){
+  const mesRef=currentDate.substring(0,7);
+  const [ano,mesN]=mesRef.split('-').map(Number);
+  const meDe=mesRef+'-01';
+  const meAte=mesRef+'-'+String(new Date(ano,mesN,0).getDate()).padStart(2,'0');
+  const mes=calcRelFinalTotals(meDe,meAte);
+  const statEl=el('statGridRelatorioFinalMes');
+  if(statEl){
+    statEl.innerHTML=`<div class="stat" style="border-color:var(--accent-d);"><div class="stat-label" style="color:var(--accent);">Total/mês</div><div class="stat-value" style="color:var(--accent);" id="rfTotalMes">${fmt(mes.total)}</div></div>`;
+  }
+  const sems=[0,1,2,3].map(i=>calcRelFinalTotals(getWeekBounds(i,currentDate).start,getWeekBounds(i,currentDate).end));
+  const listaCat=listaCatComFallback();
+  const cats=listaCat.map(c=>({k:c.chave,emoji:c.emoji,label:c.nome,cor:corCat(c.chave)}));
+  const totSems=sems.map(s=>s.total);
+  const tBody=el('tabelaSemanasFinalBody');
+  if(!tBody)return;
+  tBody.innerHTML=cats.map(c=>{
+    const vals=sems.map(s=>s[c.k]||0);
+    const tot=vals.reduce((a,v)=>a+v,0);
+    return`<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:9px 14px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${c.cor};flex-shrink:0;"></div>
+          <span style="font-size:13px;font-weight:600;">${c.emoji} ${c.label}</span>
+        </div>
+      </td>
+      ${vals.map(v=>`<td style="padding:9px 12px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;">${v>0?fmt(v):'<span style="color:var(--text3);">—</span>'}</td>`).join('')}
+      <td style="padding:9px 12px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">${fmt(tot)}</td>
+    </tr>`;
+  }).join('')+`<tr style="background:var(--bg3);">
+    <td style="padding:9px 14px;font-size:13px;font-weight:700;">Total</td>
+    ${totSems.map(v=>`<td style="padding:9px 12px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;">${v>0?fmt(v):'<span style="color:var(--text3);">—</span>'}</td>`).join('')}
+    <td style="padding:9px 12px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--accent);">${fmt(totSems.reduce((a,v)=>a+v,0))}</td>
+  </tr>`;
+}
+let chartSemanalFinalInst=null;
+function initBarChartFinal(){
+  const canvas=el('chartSemanalFinal');
+  if(!canvas)return;
+  if(chartSemanalFinalInst)chartSemanalFinalInst.destroy();
+  const isDark=document.documentElement.dataset.theme!=='light';
+  const gridColor=isDark?'#2a342c':'#d0dbd0';const tickColor=isDark?'#9ab09c':'#4a6a4c';
+  const sems=[0,1,2,3].map(i=>calcRelFinalTotals(getWeekBounds(i,currentDate).start,getWeekBounds(i,currentDate).end));
+  const listaCatChart=listaCatComFallback();
+  chartSemanalFinalInst=new Chart(canvas,{
+    type:'bar',
+    data:{labels:['Semana 1','Semana 2','Semana 3','Semana 4'],datasets:
+      listaCatChart.map(c=>({label:c.nome,data:sems.map(s=>s[c.chave]||0),backgroundColor:corCat(c.chave),borderRadius:4}))
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{
+        x:{stacked:false,grid:{display:false},ticks:{color:tickColor,font:{size:11}}},
+        y:{stacked:false,grid:{color:gridColor},ticks:{color:tickColor,font:{size:11},callback:v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})}}
+      },
+      plugins:{legend:{position:'bottom',labels:{color:tickColor,boxWidth:10,font:{size:12}}},datalabels:{display:false}}}
+  });
+  renderRelFinalTotals();
 }
 
 function precosPreview(inp, tipo, pid, media){
