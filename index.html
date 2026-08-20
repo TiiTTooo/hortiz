@@ -170,6 +170,15 @@ main{flex:1;overflow-y:auto;padding:1.25rem 1.5rem 2rem;width:100%;}
 .card-label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text2);margin-bottom:.625rem;}
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.625rem;margin-bottom:.875rem;}
 @media(min-width:480px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
+/* Preço por Produto: 1 tabela (Produto/Preço/Qtd) em telas estreitas, 2 tabelas
+   lado a lado em telas largas — nunca mais que 2, mesmo em monitor ultra-wide,
+   e as 3 colunas de cada tabela nunca se separam (é uma <table> de verdade). */
+#precoFinalTableWrap{display:grid;grid-template-columns:1fr;column-gap:32px;}
+@media(min-width:768px){#precoFinalTableWrap{grid-template-columns:repeat(2,1fr);}}
+/* Tabela de pedido (aba Pedidos, "Tabela completa"): mesma lógica de 2 colunas
+   fixas em telas largas / 1 em telas estreitas, produto e qtd continuam
+   dentro da mesma <table>, só divididos em 2 tabelas lado a lado. */
+@media(min-width:768px){#tabelaGrid{grid-template-columns:repeat(2,1fr);}}
 .stat{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem;transition:background .25s;min-width:0;overflow:hidden;}
 .stat-label{font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500;}
 .stat-value{font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace;}
@@ -259,8 +268,14 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 .export-group-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:4px;margin-right:2px;}
 
 /* ── STICKY SAVE ── */
-#sticky-save{position:fixed;left:0;right:0;bottom:56px;padding:10px 1rem;background:linear-gradient(0deg,var(--bg) 70%,transparent);z-index:95;display:none;}
+#sticky-save{position:fixed;left:0;right:0;bottom:56px;padding:10px 1rem;background:linear-gradient(0deg,var(--bg) 70%,transparent);z-index:95;display:none;transition:left .25s;}
 #sticky-save button{display:flex;}
+/* Em telas de desktop (onde a sidebar ocupa espaço de verdade em vez de ser um
+   overlay), com a sidebar aberta a barra "Salvar pedido" ficava esticada por
+   baixo dela indo até a borda esquerda da janela. Encolhe pra começar depois
+   da sidebar nesse caso. No mobile a sidebar é overlay (não empurra o layout),
+   então a barra continua ocupando a largura toda independente do estado dela. */
+@media(min-width:769px){body.sidebar-locked #sticky-save{left:210px;}}
 
 /* ── MODAL OVERLAY ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:none;align-items:center;justify-content:center;padding:1rem;}
@@ -542,11 +557,16 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               oninput="filtrarTabela(this.value)"
               autocomplete="off"/>
           </div>
-          <div class="card" style="padding:.5rem 0;overflow:hidden;"><table class="prod-table" id="tabelaGrid"></table></div>
+          <div class="card" style="padding:.5rem 0;overflow:hidden;">
+            <div id="tabelaGrid" style="display:grid;grid-template-columns:1fr;column-gap:20px;">
+              <table class="prod-table"><thead><tr><th>Produto</th><th style="width:90px">Qtd</th></tr></thead><tbody id="tabelaGridBody1"></tbody></table>
+              <table class="prod-table"><thead><tr><th>Produto</th><th style="width:90px">Qtd</th></tr></thead><tbody id="tabelaGridBody2"></tbody></table>
+            </div>
+          </div>
           <div id="listaPedidoTabela"></div>
         </div>
-        <!-- Botão atalho para ir a Compras -->
-        <div style="margin-top:1.25rem;">
+        <!-- Botão atalho para ir a Compras — só quem tem acesso à aba Compras -->
+        <div style="margin-top:1.25rem;" id="pedidosIrComprasWrap">
           <button class="btn-ghost btn-w" onclick="switchTab('compras')" style="gap:8px;">
             <i class="ti ti-map-pin"></i> Ir para Compras
           </button>
@@ -560,7 +580,32 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
           <input id="precoFinalProdFiltro" placeholder="Buscar produto…" oninput="renderPrecoFinal()"/>
         </div>
-        <div id="precoFinalTableBody" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));column-gap:28px;"></div>
+        <div id="precoFinalTableWrap">
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);">
+                  <th style="text-align:left;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Produto</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Qtd comprada</th>
+                </tr>
+              </thead>
+              <tbody id="precoFinalTableBody1"></tbody>
+            </table>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);">
+                  <th style="text-align:left;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Produto</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Preço</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;color:var(--text3);text-transform:uppercase;">Qtd comprada</th>
+                </tr>
+              </thead>
+              <tbody id="precoFinalTableBody2"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <!-- RELATÓRIOS (só pra Supervisor(a) — valor final, sem custo/margem) -->
@@ -2256,7 +2301,8 @@ function renderHome(){
       }
     }
   });
-  renderResumoRede();
+  if(currentUser&&currentUser.role==='supervisor') renderResumoRedeSupervisor();
+  else renderResumoRede();
 }
 
 /* ── RESUMO DA REDE (dono com mais de uma loja) ──
@@ -2315,47 +2361,127 @@ async function renderResumoRede(){
     // por loja — ordenado do que mais gastou pro que menos gastou (maior no topo)
     const porLoja=minhasLojas.map(l=>({loja:l,total:linhas.filter(x=>x.lojaId===l.id).reduce((a,x)=>a+x.total,0)}))
       .sort((a,b)=>b.total-a.total);
-    const totalGeral=porLoja.reduce((a,x)=>a+x.total,0);
-    el('homeRedeTotalLabel').textContent='Total da rede: '+fmt(totalGeral);
+    desenharResumoRedeChart(porLoja);
+  }catch(e){
+    wrap.style.display='none';
+  }
+}
 
-    const alturaPorLoja=42;
-    el('homeRedeBarWrap').style.height=Math.max(160,porLoja.length*alturaPorLoja)+'px';
+/* Desenha a barra horizontal do "Resumo da rede" a partir de uma lista já
+   pronta de {loja,total} (ordenada do maior pro menor) — reaproveitado tanto
+   pelo dono/admin (valorizado a custo, em renderResumoRede) quanto pelo
+   supervisor (valorizado a preço por produto, em renderResumoRedeSupervisor). */
+function desenharResumoRedeChart(porLoja){
+  const totalGeral=porLoja.reduce((a,x)=>a+x.total,0);
+  el('homeRedeTotalLabel').textContent='Total da rede: '+fmt(totalGeral);
 
-    const corBase=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#3ecf6e';
-    if(homeRedeBarInst)homeRedeBarInst.destroy();
-    // Clique navega pra loja tanto pela barra quanto pelo nome no eixo Y:
-    // mode 'y' + intersect:false pega qualquer clique na altura daquela
-    // linha, não só em cima do retângulo da barra.
-    const acharLojaDoClique=evt=>{
-      const els=homeRedeBarInst.getElementsAtEventForMode(evt,'y',{intersect:false},true);
-      return els.length?porLoja[els[0].index].loja:null;
-    };
-    homeRedeBarInst=new Chart(el('homeRedeBar'),{
-      type:'bar',
-      data:{
-        labels:porLoja.map(({loja})=>loja.id===currentLojaId?loja.nome+' (atual)':loja.nome),
-        datasets:[{data:porLoja.map(x=>x.total),backgroundColor:corBase,borderRadius:4,maxBarThickness:26}]
+  const alturaPorLoja=42;
+  el('homeRedeBarWrap').style.height=Math.max(160,porLoja.length*alturaPorLoja)+'px';
+
+  const corBase=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#3ecf6e';
+  if(homeRedeBarInst)homeRedeBarInst.destroy();
+  // Clique navega pra loja tanto pela barra quanto pelo nome no eixo Y:
+  // mode 'y' + intersect:false pega qualquer clique na altura daquela
+  // linha, não só em cima do retângulo da barra.
+  const acharLojaDoClique=evt=>{
+    const els=homeRedeBarInst.getElementsAtEventForMode(evt,'y',{intersect:false},true);
+    return els.length?porLoja[els[0].index].loja:null;
+  };
+  homeRedeBarInst=new Chart(el('homeRedeBar'),{
+    type:'bar',
+    data:{
+      labels:porLoja.map(({loja})=>loja.id===currentLojaId?loja.nome+' (atual)':loja.nome),
+      datasets:[{data:porLoja.map(x=>x.total),backgroundColor:corBase,borderRadius:4,maxBarThickness:26}]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true,maintainAspectRatio:false,
+      onClick:evt=>{const loja=acharLojaDoClique(evt);if(loja)selectLoja(loja.id);},
+      onHover:(evt)=>{evt.native.target.style.cursor=acharLojaDoClique(evt)?'pointer':'default';},
+      scales:{
+        x:{beginAtZero:true,ticks:{callback:v=>fmt(v)},grid:{color:'var(--border)'}},
+        y:{grid:{display:false},ticks:{font:{size:12,weight:'600'}}}
       },
-      options:{
-        indexAxis:'y',
-        responsive:true,maintainAspectRatio:false,
-        onClick:evt=>{const loja=acharLojaDoClique(evt);if(loja)selectLoja(loja.id);},
-        onHover:(evt)=>{evt.native.target.style.cursor=acharLojaDoClique(evt)?'pointer':'default';},
-        scales:{
-          x:{beginAtZero:true,ticks:{callback:v=>fmt(v)},grid:{color:'var(--border)'}},
-          y:{grid:{display:false},ticks:{font:{size:12,weight:'600'}}}
-        },
-        plugins:{
-          legend:{display:false},
-          tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.parsed.x)}},
-          datalabels:{
-            color:ctx=>getComputedStyle(document.documentElement).getPropertyValue('--text2').trim(),
-            anchor:'end',align:'end',offset:4,font:{size:11,weight:'700'},
-            formatter:v=>fmt(v)
-          }
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.parsed.x)}},
+        datalabels:{
+          color:ctx=>getComputedStyle(document.documentElement).getPropertyValue('--text2').trim(),
+          anchor:'end',align:'end',offset:4,font:{size:11,weight:'700'},
+          formatter:v=>fmt(v)
         }
       }
+    }
+  });
+}
+
+/* ── RESUMO DA REDE PRA SUPERVISOR(A) ──
+   Mesma barra horizontal do dono/admin, mas valorizada a "preço por produto"
+   (preço de venda sugerido) em vez de custo — supervisor não vê custo/margem.
+   `lojas` já vem só com as lojas que essa pessoa tem acesso (via loja_membros,
+   carregado em carregarMinhasLojas()), então a "rede" aqui é simplesmente
+   todas elas — sem precisar descobrir donos como no caso do dono/admin. */
+async function renderResumoRedeSupervisor(){
+  const wrap=el('homeResumoRedeWrap');
+  if(!wrap)return;
+  wrap.style.display='none';
+  if(!currentUser||currentUser.role!=='supervisor')return;
+  if(lojas.length<2)return; // só tem acesso a 1 loja — não é rede, comporta igual loja avulsa
+  try{
+    const idsRede=lojas.map(l=>l.id);
+    const ultimoDiaMes=new Date(homeResumoAno,homeResumoMes+1,0).getDate();
+    const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
+    const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
+
+    const [{data:pedidosData,error:errP},{data:comprasData,error:errC},{data:margensData,error:errMc},{data:globaisData,error:errMg}]=await Promise.all([
+      db.from('itens_pedido').select('loja_id,produto,qtd').in('loja_id',idsRede).gte('data',de).lte('data',ate),
+      db.from('compras').select('loja_id,produto,valor_unit').in('loja_id',idsRede),
+      db.from('margens_custom').select('loja_id,produto,tipo,valor').in('loja_id',idsRede),
+      db.from('margem_global').select('loja_id,percentual').in('loja_id',idsRede)
+    ]);
+    if(errP)throw errP; if(errC)throw errC; if(errMc)throw errMc; if(errMg)throw errMg;
+    wrap.style.display='';
+
+    // custo médio por produto, por loja — mesma lógica de mapaPrecoFinalPorProduto(),
+    // só que buscando direto no banco pra cobrir as OUTRAS lojas também (as variáveis
+    // globais `compras`/`priceHistory` só têm a loja ativa no momento).
+    const custoPorLojaProduto={};
+    (comprasData||[]).forEach(c=>{
+      custoPorLojaProduto[c.loja_id]=custoPorLojaProduto[c.loja_id]||{};
+      const acc=custoPorLojaProduto[c.loja_id][c.produto]||{soma:0,n:0};
+      acc.soma+=parseFloat(c.valor_unit); acc.n+=1;
+      custoPorLojaProduto[c.loja_id][c.produto]=acc;
     });
+    const margemCustomPorLoja={};
+    (margensData||[]).forEach(m=>{
+      margemCustomPorLoja[m.loja_id]=margemCustomPorLoja[m.loja_id]||{};
+      margemCustomPorLoja[m.loja_id][m.produto]={tipo:m.tipo,valor:parseFloat(m.valor)};
+    });
+    const margemGlobalPorLoja={};
+    (globaisData||[]).forEach(g=>{margemGlobalPorLoja[g.loja_id]=parseFloat(g.percentual);});
+
+    // mesma fórmula de getPrecoSugerido(), mas usando a margem daquela loja
+    // específica em vez de ler o slider #margemRange (que só reflete a loja ativa).
+    const precoSugeridoLoja=(lojaId,produto,media)=>{
+      const mc=(margemCustomPorLoja[lojaId]||{})[produto];
+      const globalPct=(margemGlobalPorLoja[lojaId]!=null?margemGlobalPorLoja[lojaId]:40)/100;
+      if(!mc)return media*(1+globalPct);
+      if(mc.tipo==='valor')return media+mc.valor;
+      return media*(1+mc.valor/100);
+    };
+
+    const totalPorLoja={};
+    idsRede.forEach(id=>totalPorLoja[id]=0);
+    (pedidosData||[]).forEach(i=>{
+      const custos=(custoPorLojaProduto[i.loja_id]||{})[i.produto];
+      if(!custos||!custos.n)return; // sem histórico de compra desse produto nessa loja — não dá pra estimar preço
+      const media=custos.soma/custos.n;
+      const preco=precoSugeridoLoja(i.loja_id,i.produto,media);
+      totalPorLoja[i.loja_id]+=parseFloat(i.qtd)*preco;
+    });
+
+    const porLoja=lojas.map(l=>({loja:l,total:totalPorLoja[l.id]||0})).sort((a,b)=>b.total-a.total);
+    desenharResumoRedeChart(porLoja);
   }catch(e){
     wrap.style.display='none';
   }
@@ -2634,6 +2760,10 @@ function switchTab(tab){
     try{renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();atualizarAvisoData();}catch(e){showToast(traduzErro(e,'Erro ao carregar pedidos: '));}
     const ehPedidos=currentUser&&(currentUser.role==='pedidos'||currentUser.role==='supervisor');
     const wrapBtn=el('pedidosGerenciarBtnWrap');if(wrapBtn)wrapBtn.style.display=ehPedidos?'none':'';
+    // "Ir para Compras" só faz sentido pra quem tem acesso à aba Compras —
+    // pra "Apenas Pedidos" e Supervisor(a) o clique só ia esbarrar num toast
+    // de acesso negado.
+    const wrapIrCompras=el('pedidosIrComprasWrap');if(wrapIrCompras)wrapIrCompras.style.display=ehPedidos?'none':'';
     // O quadro "Quantidade pedida — últimos 7 dias" só aparece pro papel "Apenas
     // Pedidos" — a Supervisor(a) agora tem a aba Relatórios própria (valor final
     // por semana/categoria), que substitui esse quadro com mais informação.
@@ -2980,7 +3110,9 @@ function renderTabelaGrid(){
   // mantê-los sempre expostos (3 colunas extras) espremia a tabela e forçava
   // rolagem lateral no celular. Clicar no produto abre uma linha com os 3
   // juntos, empilhando/quebrando linha conforme o espaço (sem scroll horizontal).
-  el('tabelaGrid').innerHTML=`<thead><tr><th>Produto</th><th style="width:90px">Qtd</th></tr></thead><tbody>`+
+  const corpo1=el('tabelaGridBody1'), corpo2=el('tabelaGridBody2');
+  if(!corpo1||!corpo2)return;
+  const blocos=
     PRODUTOS[cat].map((p,i)=>{
       const padrao=produtoPadrao(cat,p);
       // Acha a linha pendente já salva desse produto ANTES de decidir tipo/embalagem
@@ -3028,7 +3160,13 @@ function renderTabelaGrid(){
           </div>
         </td>
       </tr>`:''}`;
-    }).join('')+`</tbody>`;
+    });
+  // Sempre divide ao meio (metade em cada tabela) — não um grid solto: assim
+  // Produto e Qtd continuam colados (mesma <table>), e em tela estreita o CSS
+  // (@media min-width:768px em #tabelaGrid) empilha as duas de volta em 1 coluna.
+  const meio=Math.ceil(blocos.length/2);
+  corpo1.innerHTML=blocos.slice(0,meio).join('');
+  corpo2.innerHTML=blocos.slice(meio).join('');
 }
 function onNovoProdutoTipoChange(){
   const tipo=el('novoProdutoTipo').value;
@@ -6874,11 +7012,18 @@ function mapaPrecoFinalPorProduto(){
     byProd[h.produto].valores.push(h.custoUnitario||h.valor);
   });
 
+  // Quantidade total já comprada de cada produto (soma de todas as compras
+  // registradas dessa loja) — informação extra pra tabela de Preço por Produto.
+  const qtdPorProduto={};
+  compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
+    qtdPorProduto[c.produto]=(qtdPorProduto[c.produto]||0)+c.qtd;
+  });
+
   const mapa={};
   Object.keys(byProd).forEach(prod=>{
     const vals=byProd[prod].valores;
     const media=vals.reduce((a,v)=>a+v,0)/vals.length;
-    mapa[prod]={categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media)};
+    mapa[prod]={categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media),qtdComprada:qtdPorProduto[prod]||0};
   });
   return mapa;
 }
@@ -6887,25 +7032,40 @@ function renderPrecoFinal(){
   const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
 
   const mapa=mapaPrecoFinalPorProduto();
-  let rows=Object.keys(mapa).map(prod=>({produto:prod,categoria:mapa[prod].categoria,precoFinal:mapa[prod].precoFinal}));
+  let rows=Object.keys(mapa).map(prod=>({produto:prod,categoria:mapa[prod].categoria,precoFinal:mapa[prod].precoFinal,qtdComprada:mapa[prod].qtdComprada}));
 
   if(catF)       rows=rows.filter(r=>r.categoria===catF);
   if(prodFiltro) rows=rows.filter(r=>r.produto.toLowerCase().includes(prodFiltro));
   rows.sort((a,b)=>a.produto.localeCompare(b.produto,'pt-BR'));
 
-  // Layout em grid (até 2 colunas em telas largas, 1 em telas estreitas) em vez
-  // de tabela full-width — com nome de produto curto e preço curto, uma tabela
-  // esticada até a borda da tela deixava um vão enorme entre as duas colunas.
-  const body=el('precoFinalTableBody');
-  if(!body)return;
-  body.innerHTML=rows.length?rows.map(r=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);">
-  <div style="display:flex;align-items:center;gap:7px;min-width:0;">
-    <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
-    <span style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.produto)}</span>
-  </div>
-  <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;flex-shrink:0;">${fmt(r.precoFinal)}</span>
-</div>`).join('')
-  :`<div style="padding:2rem;text-align:center;color:var(--text3);grid-column:1/-1;">Nenhum dado disponível ainda.</div>`;
+  // Duas tabelas de verdade lado a lado (não um grid de linhas soltas) — assim
+  // Produto/Preço/Qtd nunca se separam, e o CSS (#precoFinalTableWrap) trava em
+  // no máximo 2 colunas mesmo em tela muito larga. Divide a lista ordenada ao
+  // meio: metade na primeira tabela, metade na segunda.
+  const corpo1=el('precoFinalTableBody1'), corpo2=el('precoFinalTableBody2');
+  if(!corpo1||!corpo2)return;
+  const linhaHtml=r=>`<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:7px 10px;">
+    <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+      <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
+      <span style="font-size:13px;font-weight:500;">${esc(r.produto)}</span>
+    </div>
+  </td>
+  <td style="padding:7px 10px;text-align:right;white-space:nowrap;">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">${fmt(r.precoFinal)}</span>
+  </td>
+  <td style="padding:7px 10px;text-align:right;white-space:nowrap;">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2);">${r.qtdComprada.toLocaleString('pt-BR',{maximumFractionDigits:1})}</span>
+  </td>
+</tr>`;
+  if(!rows.length){
+    const vazio=`<tr><td colspan="3" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível ainda.</td></tr>`;
+    corpo1.innerHTML=vazio;corpo2.innerHTML='';
+    return;
+  }
+  const meio=Math.ceil(rows.length/2);
+  corpo1.innerHTML=rows.slice(0,meio).map(linhaHtml).join('');
+  corpo2.innerHTML=rows.slice(meio).map(linhaHtml).join('');
 }
 
 /* ── RELATÓRIO DE VALORES FINAIS (só pra Supervisor(a)) ──
