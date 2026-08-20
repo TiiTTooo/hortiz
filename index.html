@@ -458,11 +458,13 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <button onclick="el('banner-pendentes-ontem').style.display='none'" style="background:none;border:none;color:var(--amber);font-size:18px;padding:0;cursor:pointer;flex-shrink:0;"><i class="ti ti-x"></i></button>
         </div>
         <div class="home-quick">
-          <div class="quick-card" onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i><span>Pedidos</span></div>
-          <div class="quick-card" onclick="switchTab('compras')"><i class="ti ti-map-pin"></i><span>Compras</span></div>
-          <div class="quick-card" onclick="switchTab('despesas')"><i class="ti ti-receipt"></i><span>Despesas</span></div>
-          <div class="quick-card" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i><span>Fornecedores</span></div>
-          <div class="quick-card" onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
+          <div class="quick-card" data-tab="pedidos" onclick="switchTab('pedidos')"><i class="ti ti-clipboard-list"></i><span>Pedidos</span></div>
+          <div class="quick-card" data-tab="compras" onclick="switchTab('compras')"><i class="ti ti-map-pin"></i><span>Compras</span></div>
+          <div class="quick-card" data-tab="despesas" onclick="switchTab('despesas')"><i class="ti ti-receipt"></i><span>Despesas</span></div>
+          <div class="quick-card" data-tab="fornecedores" onclick="switchTab('fornecedores')"><i class="ti ti-truck"></i><span>Fornecedores</span></div>
+          <div class="quick-card" data-tab="relatorios" onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
+          <div class="quick-card" data-tab="precofinal" onclick="switchTab('precofinal')" style="display:none;"><i class="ti ti-tag"></i><span>Preço Final</span></div>
+          <div class="quick-card" data-tab="relatoriosfinal" onclick="switchTab('relatoriosfinal')" style="display:none;"><i class="ti ti-chart-bar"></i><span>Relatórios</span></div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
           <div class="home-section" style="margin:0;"><i class="ti ti-chart-pie"></i> Resumo do mês por categoria</div>
@@ -1978,11 +1980,14 @@ async function enterApp(){
   el('sideUsuarios').style.display=ehGerente?'none':'';
   el('sideLoja').style.display=ehGerente?'none':'';
   await carregarMinhasLojas();
+  // Cartões de atalho da tela Início (.quick-card) precisam seguir a MESMA
+  // liberação de aba que .side-btn/.nav-btn — antes só o menu lateral era
+  // filtrado por papel, e os atalhos da Início continuavam mostrando Compras/
+  // Despesas/Fornecedores/Relatórios (do dono) pra qualquer papel, mesmo pra
+  // quem não tem acesso nenhum a essas abas (Apenas Pedidos, Comprador,
+  // Supervisor(a)).
   if(ehPedidos){
-    document.querySelectorAll('.side-btn').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos')?'':'none';
-    });
-    document.querySelectorAll('.nav-btn').forEach(btn=>{
+    document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
       btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos')?'':'none';
     });
   }
@@ -1990,19 +1995,21 @@ async function enterApp(){
     // Supervisor(a): faz pedido em qualquer uma das lojas dela (multi-loja, igual gerente)
     // e vê o preço de venda por produto, mas nada de Compras/Despesas/Fornecedores/Preços/
     // Usuários/Loja/Assinatura — só Início, Pedidos, Preço Final e Relatórios.
-    document.querySelectorAll('.side-btn').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')?'':'none';
-    });
-    document.querySelectorAll('.nav-btn').forEach(btn=>{
+    document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
       btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')?'':'none';
     });
   }
   if(ehComprador){
-    document.querySelectorAll('.side-btn').forEach(btn=>{
+    document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
       btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='compras')?'':'none';
     });
-    document.querySelectorAll('.nav-btn').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='compras')?'':'none';
+  }
+  if(!ehPedidos&&!ehSupervisor&&!ehComprador){
+    // Dono/Gerente: os dois atalhos exclusivos da Supervisor(a) (Preço Final e
+    // o Relatórios "valor final") ficam escondidos na Início — quem já tem o
+    // relatório de custo completo não precisa do atalho pro relatório simplificado.
+    document.querySelectorAll('.quick-card').forEach(btn=>{
+      if(btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal')btn.style.display='none';
     });
   }
   refreshHeader();
