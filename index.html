@@ -435,7 +435,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div class="side-btn" data-tab="relatorios"   onclick="switchTab('relatorios')"><i class="ti ti-chart-bar"></i> Relatórios</div>
       <div class="side-btn" data-tab="historico"    onclick="switchTab('historico')"><i class="ti ti-history"></i> Compras Realizadas</div>
       <div class="side-btn" data-tab="precos"       onclick="switchTab('precos')"><i class="ti ti-tag"></i> Custo / Preço</div>
-      <div class="side-btn" data-tab="gerenciar"    onclick="switchTab('gerenciar')"><i class="ti ti-adjustments"></i> Gerenciar Produtos e Forn.</div>
+      <div class="side-btn" data-tab="gerenciar"    onclick="switchTab('gerenciar')" id="sideGerenciar"><i class="ti ti-adjustments"></i> Gerenciar Produtos e Forn.</div>
       <div class="side-sep"></div>
       <div class="side-btn" data-tab="loja"         onclick="switchTab('loja')" id="sideLoja"><i class="ti ti-building-store"></i> Minha Loja</div>
       <div class="side-btn" data-tab="lojasolicitacoes" onclick="switchTab('lojasolicitacoes')" id="sideLojaSolicitacoes" style="display:none;"><i class="ti ti-clipboard-check"></i> Solicitações de Loja <span id="badgeLojaSolic" style="display:none;background:var(--amber);color:#1a1000;border-radius:99px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:6px;"></span></div>
@@ -2089,6 +2089,8 @@ async function enterApp(){
     const gsF=el('gerSubFornecedores'),gsD=el('gerSubDespesas');
     if(gsF)gsF.style.display='none';
     if(gsD)gsD.style.display='none';
+    const sideGer=el('sideGerenciar');
+    if(sideGer)sideGer.innerHTML='<i class="ti ti-adjustments"></i> Gerenciar Produtos';
   }
   if(ehComprador){
     document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
