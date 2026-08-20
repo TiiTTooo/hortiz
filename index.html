@@ -923,14 +923,24 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
         <div class="card">
           <div class="card-label">Solicitar atualização dos dados da loja</div>
           <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Preencha os dados que precisam mudar e envie — o gerente ou dono da loja precisa aprovar antes da mudança valer de verdade.</p>
-          <div style="display:flex;flex-direction:column;gap:.625rem;">
-            <div class="field-group"><label>Nome da loja *</label><input id="lsNome" placeholder="Ex: CEI Arco Íris"/></div>
-            <div class="field-group"><label>Endereço</label><input id="lsEndereco" placeholder="Rua, número, bairro"/></div>
-            <div class="field-row" style="margin:0;">
-              <div class="field-group" style="margin:0;"><label>Cidade</label><input id="lsCidade" placeholder="Cidade"/></div>
-              <div class="field-group" style="margin:0;"><label>CNPJ / CPF *</label><input id="lsCnpj" placeholder="00.000.000/0001-00"/></div>
+          <div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:.875rem;flex-wrap:wrap;">
+            <div>
+              <div class="logo-upload" onclick="document.getElementById('lsLogoInput').click()">
+                <img id="lsLogoPreview" src="" style="display:none;"/>
+                <i class="ti ti-photo" id="lsLogoIcon"></i>
+              </div>
+              <input type="file" id="lsLogoInput" accept="image/*" style="display:none;" onchange="previewLogoSolicitacao(this)"/>
+              <p style="font-size:11px;color:var(--text3);margin-top:4px;text-align:center;">Foto/logo</p>
             </div>
-            <div class="field-group"><label>Telefone</label><input id="lsTel" placeholder="(11) 99999-9999"/></div>
+            <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:.625rem;">
+              <div class="field-group"><label>Nome da loja *</label><input id="lsNome" placeholder="Ex: CEI Arco Íris"/></div>
+              <div class="field-group"><label>Endereço</label><input id="lsEndereco" placeholder="Rua, número, bairro"/></div>
+              <div class="field-row" style="margin:0;">
+                <div class="field-group" style="margin:0;"><label>Cidade</label><input id="lsCidade" placeholder="Cidade"/></div>
+                <div class="field-group" style="margin:0;"><label>CNPJ / CPF *</label><input id="lsCnpj" placeholder="00.000.000/0001-00"/></div>
+              </div>
+              <div class="field-group"><label>Telefone</label><input id="lsTel" placeholder="(11) 99999-9999"/></div>
+            </div>
           </div>
           <div id="lsPendenteAviso" style="display:none;background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);padding:.5rem .75rem;margin-top:.75rem;font-size:13px;color:var(--amber);font-weight:600;">
             <i class="ti ti-clock"></i> Já existe uma solicitação pendente pra essa loja — aguarde a resposta do gerente/dono antes de enviar outra.
@@ -2069,10 +2079,16 @@ async function enterApp(){
   if(ehSupervisor){
     // Supervisor(a): faz pedido em qualquer uma das lojas dela (multi-loja, igual gerente)
     // e vê o preço de venda por produto, mas nada de Compras/Despesas/Fornecedores/Preços/
-    // Usuários/Loja/Assinatura — só Início, Pedidos, Preço por Produto e Relatórios.
+    // Usuários/Assinatura — só Início, Pedidos, Preço por Produto, Relatórios, Dados da
+    // Loja e Gerenciar (só as sub-abas Produtos/Categorias — ver switchGerenciarView).
     document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
-      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal'||btn.dataset.tab==='lojasupervisor')?'':'none';
+      btn.style.display=(btn.dataset.tab==='home'||btn.dataset.tab==='pedidos'||btn.dataset.tab==='precofinal'||btn.dataset.tab==='relatoriosfinal'||btn.dataset.tab==='lojasupervisor'||btn.dataset.tab==='gerenciar')?'':'none';
     });
+    // Fornecedores e Despesas não fazem parte do trabalho da Supervisor(a) — só
+    // Produtos e Categorias ficam visíveis como sub-aba dentro de Gerenciar.
+    const gsF=el('gerSubFornecedores'),gsD=el('gerSubDespesas');
+    if(gsF)gsF.style.display='none';
+    if(gsD)gsD.style.display='none';
   }
   if(ehComprador){
     document.querySelectorAll('.side-btn,.nav-btn,.quick-card').forEach(btn=>{
@@ -2760,7 +2776,7 @@ function chaveLS(base){
 function abaRestauravelParaUsuario(tab){
   if(!currentUser)return tab==='home';
   if(currentUser.role==='pedidos')return tab==='home'||tab==='pedidos';
-  if(currentUser.role==='supervisor')return tab==='home'||tab==='pedidos'||tab==='precofinal'||tab==='relatoriosfinal'||tab==='lojasupervisor';
+  if(currentUser.role==='supervisor')return tab==='home'||tab==='pedidos'||tab==='precofinal'||tab==='relatoriosfinal'||tab==='lojasupervisor'||tab==='gerenciar';
   if(currentUser.role==='comprador')return tab==='home'||tab==='compras';
   if(tab==='master')return !!currentUser.isAdmin;
   if(currentUser.role==='manager')return !['usuarios','loja','lojasupervisor'].includes(tab);
@@ -2775,8 +2791,8 @@ function switchTab(tab){
     showToast('Seu acesso é só pra fazer pedidos.');
     return;
   }
-  if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'&&tab!=='relatoriosfinal'&&tab!=='lojasupervisor'){
-    showToast('Seu acesso é só pra Pedidos, Preço por Produto, Relatórios e Dados da Loja.');
+  if(currentUser&&currentUser.role==='supervisor'&&tab!=='home'&&tab!=='pedidos'&&tab!=='precofinal'&&tab!=='relatoriosfinal'&&tab!=='lojasupervisor'&&tab!=='gerenciar'){
+    showToast('Seu acesso é só pra Pedidos, Preço por Produto, Relatórios, Dados da Loja e Gerenciar Produtos.');
     return;
   }
   if(currentUser&&currentUser.role==='comprador'&&tab!=='home'&&tab!=='compras'){
@@ -4102,6 +4118,11 @@ function badgeStatusSolic(status){
   if(status==='rejeitada')return badge('badge-fiado','Rejeitada');
   return badge('badge-pendente','Pendente');
 }
+function previewLogoSolicitacao(inp){
+  const f=inp.files[0];if(!f)return;
+  if(f.size>2*1024*1024){showToast('Imagem muito grande (máx. 2MB) — escolhe uma menor ou comprime antes de enviar.');inp.value='';return;}
+  const r=new FileReader();r.onload=e=>{el('lsLogoPreview').src=e.target.result;el('lsLogoPreview').style.display='';el('lsLogoIcon').style.display='none';};r.readAsDataURL(f);
+}
 async function renderLojaSupervisor(){
   const loja=lojas.find(l=>l.id===currentLojaId);
   if(loja){
@@ -4110,6 +4131,8 @@ async function renderLojaSupervisor(){
     el('lsCidade').value=loja.cidade||'';
     el('lsCnpj').value=loja.cnpj||'';
     el('lsTel').value=loja.tel||'';
+    if(loja.logo){el('lsLogoPreview').src=loja.logo;el('lsLogoPreview').style.display='';el('lsLogoIcon').style.display='none';}
+    else{el('lsLogoPreview').style.display='none';el('lsLogoIcon').style.display='';}
   }
   const lista=el('listaMinhasSolicitacoes');
   if(lista)lista.innerHTML='Carregando…';
@@ -4129,7 +4152,10 @@ async function renderLojaSupervisor(){
           <span style="font-size:12px;color:var(--text3);">${fmtDataHoraBr(s.created_at)}</span>
           ${badgeStatusSolic(s.status)}
         </div>
-        <div style="font-size:13px;line-height:1.6;"><b>${esc(s.nome)}</b>${s.cnpj?' · '+esc(s.cnpj):''}${s.endereco?'<br>'+esc(s.endereco):''}${s.cidade?' — '+esc(s.cidade):''}${s.tel?'<br>'+esc(s.tel):''}</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          ${s.logo?`<img src="${s.logo}" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>`:''}
+          <div style="font-size:13px;line-height:1.6;"><b>${esc(s.nome)}</b>${s.cnpj?' · '+esc(s.cnpj):''}${s.endereco?'<br>'+esc(s.endereco):''}${s.cidade?' — '+esc(s.cidade):''}${s.tel?'<br>'+esc(s.tel):''}</div>
+        </div>
         ${s.status==='rejeitada'&&s.motivo_rejeicao?`<div style="margin-top:6px;font-size:12px;color:var(--red);"><i class="ti ti-info-circle"></i> Motivo: ${esc(s.motivo_rejeicao)}</div>`:''}
         ${s.status==='pendente'?`<button class="btn-ghost btn-sm" style="margin-top:8px;" onclick="cancelarSolicitacaoLoja(${s.id})"><i class="ti ti-x"></i> Cancelar solicitação</button>`:''}
       </div>`).join('');
@@ -4151,7 +4177,8 @@ async function enviarAtualizacaoLoja(){
     cnpj,
     endereco:el('lsEndereco').value.trim(),
     cidade:el('lsCidade').value.trim(),
-    tel:el('lsTel').value.trim()
+    tel:el('lsTel').value.trim(),
+    logo:el('lsLogoPreview').style.display!=='none'?el('lsLogoPreview').src:null
   };
   try{
     const {error}=await db.from('loja_atualizacoes_pendentes').insert(payload);
@@ -4198,6 +4225,7 @@ async function renderLojaSolicitacoes(){
           <span style="font-size:12px;color:var(--text3);">${esc(s.solicitante_nome||'Alguém')} · ${fmtDataHoraBr(s.created_at)}</span>
           ${badgeStatusSolic(s.status)}
         </div>
+        ${(s.logo&&s.logo!==loja.logo)?`<div style="font-size:12px;margin-top:2px;display:flex;align-items:center;gap:6px;"><span style="color:var(--text3);">Foto/logo:</span> ${loja.logo?`<img src="${loja.logo}" style="width:24px;height:24px;border-radius:6px;object-fit:cover;opacity:.5;"/>`:''} → <img src="${s.logo}" style="width:24px;height:24px;border-radius:6px;object-fit:cover;border:1px solid var(--accent);"/></div>`:''}
         ${linhaDiff('Nome',loja.nome,s.nome)}
         ${linhaDiff('CNPJ/CPF',loja.cnpj,s.cnpj)}
         ${linhaDiff('Endereço',loja.endereco,s.endereco)}
@@ -4698,6 +4726,9 @@ async function trocarPapelGerente(perfilId,nome,papelAtual){
 
 let gerenciarViewAtual='produtos';
 function switchGerenciarView(view){
+  // Supervisor(a) só mexe em Produtos/Categorias — Fornecedores/Despesas não são
+  // dela (nem a sub-aba aparece, mas trava aqui também contra localStorage antigo).
+  if(currentUser&&currentUser.role==='supervisor'&&(view==='fornecedores'||view==='despesas'))view='produtos';
   gerenciarViewAtual=view;
   localStorage.setItem(chaveLS('ceasa_gerenciar_view'),view);
   el('ger-produtos').style.display=view==='produtos'?'':'none';
