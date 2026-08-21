@@ -6819,6 +6819,28 @@ async function excluirProduto(id,nome){
   }catch(e){showToast(traduzErro(e,'Erro: '));}
 }
 
+// Busca TODAS as linhas de uma consulta, mesmo passando de 1000 (limite padrão do
+// PostgREST). Sem isso, qualquer loja com mais de 1000 pedidos/compras/despesas no
+// histórico tem os dados mais RECENTES cortados silenciosamente (porque a consulta
+// pedia ordem ascendente por data de criação, então o corte em 1000 sempre derruba
+// exatamente o que acabou de ser criado). Foi o que aconteceu com a Hortifruti 9 de
+// Julho (loja 38) em 21/08/2026: ela já tinha 1117 itens_pedido no total, então os
+// ~117 mais novos (incluindo o pedido do dia 21) simplesmente não chegavam no
+// navegador — não é bug de tela, os dados nunca saíam do banco.
+async function fetchTudoPaginado(builderFn){
+  let tudo=[];
+  let pagina=0;
+  const TAM=1000;
+  while(true){
+    const {data,error}=await builderFn().range(pagina*TAM,(pagina+1)*TAM-1);
+    if(error) return {data:null,error};
+    tudo=tudo.concat(data||[]);
+    if(!data||data.length<TAM) break;
+    pagina++;
+  }
+  return {data:tudo,error:null};
+}
+
 async function carregarDadosDaLoja(){
   if(!currentLojaId)return;
   pedidosSincronizadosOk=false;
@@ -6847,11 +6869,11 @@ async function carregarDadosDaLoja(){
       if(idx===-1) lojas.push(lojaAtual); else lojas[idx]=lojaAtual;
     }
     // Pedidos (itens_pedido)
-    const { data: pedidosData, error: pedidosErr } = await db
+    const { data: pedidosData, error: pedidosErr } = await fetchTudoPaginado(() => db
       .from('itens_pedido')
       .select('*')
       .eq('loja_id', currentLojaId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }));
     if(!pedidosErr && pedidosData){
       itensPedido = pedidosData.map(p=>({
         id: p.id, data: p.data, produto: p.produto, categoria: p.categoria,
@@ -6875,11 +6897,11 @@ async function carregarDadosDaLoja(){
     }
 
     // Compras
-    const { data: comprasData, error: comprasErr } = await db
+    const { data: comprasData, error: comprasErr } = await fetchTudoPaginado(() => db
       .from('compras')
       .select('*')
       .eq('loja_id', currentLojaId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }));
     if(!comprasErr && comprasData){
       compras = comprasData.map(c=>({
         id: c.id, produto: c.produto, categoria: c.categoria,
@@ -6897,8 +6919,8 @@ async function carregarDadosDaLoja(){
       }));
     }
     // Despesas
-    const {data:despData,error:despErr}=await db.from('despesas')
-      .select('*').eq('loja_id',currentLojaId).order('data',{ascending:true});
+    const {data:despData,error:despErr}=await fetchTudoPaginado(()=>db.from('despesas')
+      .select('*').eq('loja_id',currentLojaId).order('data',{ascending:true}));
     if(!despErr&&despData){
       despesas=despData.map(d=>({
         id:d.id,descricao:d.descricao,valor:parseFloat(d.valor),
