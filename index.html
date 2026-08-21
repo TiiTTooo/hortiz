@@ -1705,6 +1705,46 @@ let usuarios=[];
 let itensPedido=[];
 let compras=[],despesas=[];
 let tabelaDraft={},tabelaDraftTipo={},tabelaDraftUnid={},tabelaDraftForn={};
+/* Rascunho da "Tabela completa" de Pedidos SÓ existia em memória (variável JS) — se a
+   aba recarregasse por qualquer motivo (celular derrubando a aba em segundo plano por
+   pouca memória, queda de conexão, F5 sem querer) antes de clicar "Salvar pedido", tudo
+   que tinha sido digitado sumia sem aviso nenhum. Agora ecoa pro localStorage a cada
+   dígito e é restaurado ao carregar a página — reduz bastante esse tipo de perda. */
+function chaveDraftLocal(){return chaveLS('ceasa_tabela_draft')+'_'+(currentLojaId||'semloja');}
+function persistDraftLocal(){
+  try{
+    localStorage.setItem(chaveDraftLocal(),JSON.stringify({
+      data:currentDate,
+      tabelaDraft,tabelaDraftTipo,tabelaDraftUnid,tabelaDraftForn
+    }));
+  }catch(e){}
+}
+function restaurarDraftLocal(){
+  try{
+    const raw=localStorage.getItem(chaveDraftLocal());
+    if(!raw)return;
+    const salvo=JSON.parse(raw);
+    // O rascunho só faz sentido pra data em que foi digitado — restaurar num dia
+    // diferente causaria o problema oposto (número aparecendo numa data errada).
+    if(!salvo||salvo.data!==currentDate)return;
+    Object.keys(salvo.tabelaDraft||{}).forEach(cat=>{
+      if(!tabelaDraft[cat])tabelaDraft[cat]={};
+      Object.assign(tabelaDraft[cat],salvo.tabelaDraft[cat]);
+    });
+    Object.keys(salvo.tabelaDraftTipo||{}).forEach(cat=>{
+      if(!tabelaDraftTipo[cat])tabelaDraftTipo[cat]={};
+      Object.assign(tabelaDraftTipo[cat],salvo.tabelaDraftTipo[cat]);
+    });
+    Object.keys(salvo.tabelaDraftUnid||{}).forEach(cat=>{
+      if(!tabelaDraftUnid[cat])tabelaDraftUnid[cat]={};
+      Object.assign(tabelaDraftUnid[cat],salvo.tabelaDraftUnid[cat]);
+    });
+    Object.keys(salvo.tabelaDraftForn||{}).forEach(cat=>{
+      if(!tabelaDraftForn[cat])tabelaDraftForn[cat]={};
+      Object.assign(tabelaDraftForn[cat],salvo.tabelaDraftForn[cat]);
+    });
+  }catch(e){}
+}
 let currentCatTab='fruta';
 let currentDate=todayStr();
 let sidebarOpen=false;
@@ -2893,16 +2933,27 @@ function atualizarAvisoData(){
   const b1=el('avisoDataPedidos');if(b1){b1.style.display=naoEhHoje?'block':'none';b1.innerHTML=html;}
   const b2=el('avisoDataCompras');if(b2){b2.style.display=naoEhHoje?'block':'none';b2.innerHTML=html;}
 }
+// `renderAll()` nunca re-renderizava a "Tabela completa" (view-tabela) — só a lista
+// item-por-item e outras abas. Resultado: se a data mudasse (setinhas, campo de data,
+// histórico) enquanto a pessoa estava com a Tabela completa aberta, a tabela na tela
+// continuava mostrando os inputs da data ANTIGA (com o que já tinha sido digitado),
+// mas "Salvar pedido" passava a gravar tudo na data NOVA — o pedido não sumia de
+// verdade, ficava salvo num dia diferente do que a pessoa achava que estava editando.
+// Esta função garante que a grade sempre reflita a `currentDate` atual.
+function atualizarTabelaSeVisivel(){
+  const tabelaVisivel=el('view-tabela')&&el('view-tabela').style.display!=='none';
+  if(tabelaVisivel){restaurarDraftLocal();renderTabelaGrid();updateSalvarLabel();}
+}
 function voltarParaHoje(){
   const hoje=todayStr();
   const inp=el('pedidoData');if(inp)inp.value=hoje;
   currentDate=hoje;
-  refreshHeadings();renderHistorico();renderAll();
+  refreshHeadings();renderHistorico();renderAll();atualizarTabelaSeVisivel();atualizarAvisoData();
   const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;
   showToast('Voltou pro pedido de hoje.');
 }
-function onDateChange(){currentDate=el('pedidoData').value||todayStr();refreshHeadings();renderHistorico();renderAll();const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;}
-function onHistoricoChange(){const v=el('historicoSelect').value;if(v){currentDate=v;el('pedidoData').value=v;refreshHeadings();renderAll();}}
+function onDateChange(){currentDate=el('pedidoData').value||todayStr();refreshHeadings();renderHistorico();renderAll();atualizarTabelaSeVisivel();atualizarAvisoData();const ddEl=el('dataDespesa');if(ddEl&&!ddEl._userChanged)ddEl.value=currentDate;}
+function onHistoricoChange(){const v=el('historicoSelect').value;if(v){currentDate=v;el('pedidoData').value=v;refreshHeadings();renderAll();atualizarTabelaSeVisivel();atualizarAvisoData();}}
 function navegarDiaCompra(delta){
   const datasComPedido=[...new Set(itensPedido.filter(p=>p.lojaId===currentLojaId).map(p=>p.data))].sort();
   if(!datasComPedido.length){showToast('Nenhum dia com pedido registrado ainda.');return;}
@@ -3198,24 +3249,24 @@ function renderTabelaGrid(){
             ${df?`<i class="ti ti-truck" style="font-size:12px;flex-shrink:0;color:var(--accent);" title="Fornecedor: ${esc(df)}"></i>`:''}
           </div>
         </td>
-        <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel()"/></td>
+        <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel();persistDraftLocal()"/></td>
       </tr>${aberto?`<tr class="tabela-forn-subrow">
         <td colspan="2" style="padding-top:0;background:var(--bg3);">
           <div style="display:flex;gap:10px;padding:6px 0 4px;">
             <div style="display:flex;flex-direction:column;gap:2px;flex:1;">
               <label style="font-size:10px;color:var(--text3);">Tipo</label>
-              <select id="tt_${i}" style="font-size:12px;padding:5px 6px;width:100%;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}')">
+              <select id="tt_${i}" style="font-size:12px;padding:5px 6px;width:100%;" onchange="tabelaDraftTipo['${cat}']['${esc(escJs(p))}'] = this.value;updateUnidCell(${i},'${cat}','${esc(escJs(p))}');persistDraftLocal()">
                 ${tipoOptionsHtml(dt)}
               </select>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;flex:1;">
               <label style="font-size:10px;color:var(--text3);">Un/emb</label>
-              <input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;width:100%;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value"/>
+              <input type="number" min="1" step="1" id="tu_${i}" placeholder="un/emb" value="${du}" style="font-size:12px;padding:5px 6px;width:100%;${dt==='unidade'?'opacity:.3;pointer-events:none':''}" oninput="tabelaDraftUnid['${cat}']['${esc(escJs(p))}'] = this.value;persistDraftLocal()"/>
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;padding:0 0 8px;">
             <label style="font-size:10px;color:var(--text3);">🚚 Fornecedor</label>
-            <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value"/>
+            <input id="tf_${i}" placeholder="Fornecedor cadastrado" list="tabForn_${i}" value="${esc(df)}" style="font-size:12px;padding:5px 6px;width:100%;" oninput="tabelaDraftForn['${cat}']['${esc(escJs(p))}'] = this.value;persistDraftLocal()"/>
             <datalist id="tabForn_${i}">${getAllFornByCat(cat).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
           </div>
         </td>
@@ -6219,6 +6270,7 @@ async function carregarProdutos(){
       if(!tabelaDraftUnid[cat])tabelaDraftUnid[cat]={};
       if(!tabelaDraftForn[cat])tabelaDraftForn[cat]={};
     });
+    restaurarDraftLocal();
   }catch(e){}
 }
 function produtoPadrao(cat,nome){
