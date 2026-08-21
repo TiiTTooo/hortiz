@@ -2452,12 +2452,20 @@ async function renderResumoRede(){
     const ultimoDiaMes=new Date(homeResumoAno,homeResumoMes+1,0).getDate();
     const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
     const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
-    const {data,error}=await db.from('compras').select('loja_id,qtd,valor_unit').in('loja_id',idsRede).gte('data',de).lte('data',ate);
+    // Soma feita DENTRO do banco (RPC resumo_rede_valor_compras), não mais buscando
+    // as linhas cruas de compras pro navegador e somando em JS. Motivo: o PostgREST
+    // limita cada resposta a 1000 linhas por padrão — com uma rede de lojas movimentada
+    // (muitas compras no mês), a soma vinha TRUNCADA sem erro nenhum aparecer: a(s)
+    // primeira(s) loja(s) da lista ficavam com o total certo e as seguintes ficavam
+    // com valor parcial ou até zero, mesmo tendo compras normalmente. Bug real
+    // reportado pelo Tito em 21/08/2026 ("a soma no relatório de baixo não tá batendo").
+    const {data,error}=await db.rpc('resumo_rede_valor_compras',{p_lojas:idsRede,p_de:de,p_ate:ate});
     if(error)throw error;
-    const linhas=(data||[]).map(c=>({lojaId:c.loja_id,total:parseFloat(c.qtd)*parseFloat(c.valor_unit)}));
+    const totalPorLojaId={};
+    (data||[]).forEach(r=>{totalPorLojaId[r.loja_id]=parseFloat(r.total);});
 
     // por loja — ordenado do que mais gastou pro que menos gastou (maior no topo)
-    const porLoja=minhasLojas.map(l=>({loja:l,total:linhas.filter(x=>x.lojaId===l.id).reduce((a,x)=>a+x.total,0)}))
+    const porLoja=minhasLojas.map(l=>({loja:l,total:totalPorLojaId[l.id]||0}))
       .sort((a,b)=>b.total-a.total);
     desenharResumoRedeChart(porLoja);
   }catch(e){
@@ -2531,54 +2539,21 @@ async function renderResumoRedeSupervisor(){
     const de=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-01`;
     const ate=`${homeResumoAno}-${String(homeResumoMes+1).padStart(2,'0')}-${String(ultimoDiaMes).padStart(2,'0')}`;
 
-    const [{data:pedidosData,error:errP},{data:comprasData,error:errC},{data:margensData,error:errMc},{data:globaisData,error:errMg}]=await Promise.all([
-      db.from('itens_pedido').select('loja_id,produto,qtd').in('loja_id',idsRede).gte('data',de).lte('data',ate),
-      db.from('compras').select('loja_id,produto,valor_unit').in('loja_id',idsRede),
-      db.from('margens_custom').select('loja_id,produto,tipo,valor').in('loja_id',idsRede),
-      db.from('margem_global').select('loja_id,percentual').in('loja_id',idsRede)
-    ]);
-    if(errP)throw errP; if(errC)throw errC; if(errMc)throw errMc; if(errMg)throw errMg;
+    // Soma feita DENTRO do banco (RPC resumo_rede_valor_pedidos — mesma fórmula de
+    // getPrecoSugerido(), replicada em SQL), não mais buscando as linhas cruas de
+    // itens_pedido/compras/margens pro navegador e somando em JS. Motivo: o PostgREST
+    // limita cada resposta a 1000 linhas por padrão — a busca de `compras` aqui nem
+    // tinha filtro de data (histórico completo da rede inteira), então ia estourar
+    // esse limite conforme o histórico crescesse, truncando a soma sem erro nenhum
+    // aparecer (mesma classe de bug real encontrada e corrigida em renderResumoRede()
+    // pro dono/admin em 21/08/2026).
+    const {data,error}=await db.rpc('resumo_rede_valor_pedidos',{p_lojas:idsRede,p_de:de,p_ate:ate});
+    if(error)throw error;
     wrap.style.display='';
+    const totalPorLojaId={};
+    (data||[]).forEach(r=>{totalPorLojaId[r.loja_id]=parseFloat(r.total);});
 
-    // custo médio por produto, por loja — mesma lógica de mapaPrecoFinalPorProduto(),
-    // só que buscando direto no banco pra cobrir as OUTRAS lojas também (as variáveis
-    // globais `compras`/`priceHistory` só têm a loja ativa no momento).
-    const custoPorLojaProduto={};
-    (comprasData||[]).forEach(c=>{
-      custoPorLojaProduto[c.loja_id]=custoPorLojaProduto[c.loja_id]||{};
-      const acc=custoPorLojaProduto[c.loja_id][c.produto]||{soma:0,n:0};
-      acc.soma+=parseFloat(c.valor_unit); acc.n+=1;
-      custoPorLojaProduto[c.loja_id][c.produto]=acc;
-    });
-    const margemCustomPorLoja={};
-    (margensData||[]).forEach(m=>{
-      margemCustomPorLoja[m.loja_id]=margemCustomPorLoja[m.loja_id]||{};
-      margemCustomPorLoja[m.loja_id][m.produto]={tipo:m.tipo,valor:parseFloat(m.valor)};
-    });
-    const margemGlobalPorLoja={};
-    (globaisData||[]).forEach(g=>{margemGlobalPorLoja[g.loja_id]=parseFloat(g.percentual);});
-
-    // mesma fórmula de getPrecoSugerido(), mas usando a margem daquela loja
-    // específica em vez de ler o slider #margemRange (que só reflete a loja ativa).
-    const precoSugeridoLoja=(lojaId,produto,media)=>{
-      const mc=(margemCustomPorLoja[lojaId]||{})[produto];
-      const globalPct=(margemGlobalPorLoja[lojaId]!=null?margemGlobalPorLoja[lojaId]:40)/100;
-      if(!mc)return media*(1+globalPct);
-      if(mc.tipo==='valor')return media+mc.valor;
-      return media*(1+mc.valor/100);
-    };
-
-    const totalPorLoja={};
-    idsRede.forEach(id=>totalPorLoja[id]=0);
-    (pedidosData||[]).forEach(i=>{
-      const custos=(custoPorLojaProduto[i.loja_id]||{})[i.produto];
-      if(!custos||!custos.n)return; // sem histórico de compra desse produto nessa loja — não dá pra estimar preço
-      const media=custos.soma/custos.n;
-      const preco=precoSugeridoLoja(i.loja_id,i.produto,media);
-      totalPorLoja[i.loja_id]+=parseFloat(i.qtd)*preco;
-    });
-
-    const porLoja=lojas.map(l=>({loja:l,total:totalPorLoja[l.id]||0})).sort((a,b)=>b.total-a.total);
+    const porLoja=lojas.map(l=>({loja:l,total:totalPorLojaId[l.id]||0})).sort((a,b)=>b.total-a.total);
     desenharResumoRedeChart(porLoja);
   }catch(e){
     wrap.style.display='none';
