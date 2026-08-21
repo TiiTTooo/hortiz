@@ -1704,6 +1704,18 @@ let lojas=[];
 let usuarios=[];
 let itensPedido=[];
 let compras=[],despesas=[];
+/* Fica false enquanto carregarDadosDaLoja() não confirma um carregamento OK dessa
+   loja — bloqueia salvarTabela() nesse meio-tempo. Motivo (bug real investigado em
+   21/08/2026, loja Hortifruti 9 de Julho): quando a sincronização falhava (conexão
+   ruim), a tela ficava de pé mostrando a tabela vazia (sem os pedidos já salvos),
+   só com um toast discreto de 2s avisando "trabalhando offline" — fácil de não ver.
+   A pessoa via a caixinha vazia, achava que o pedido tinha sumido e digitava tudo de
+   novo, criando uma linha DUPLICADA pra cada produto (a antiga continuava salva no
+   banco, só não tinha carregado na tela). Reportado pelo Tito: pedidos da loja 9 de
+   Julho pareciam "sumir" ao preencher Legumes — na real, nunca sumiram, foram
+   duplicados 2x seguidas por causa disso (70 linhas duplicadas encontradas e
+   removidas direto no banco). */
+let pedidosSincronizadosOk=false;
 let tabelaDraft={},tabelaDraftTipo={},tabelaDraftUnid={},tabelaDraftForn={};
 /* Rascunho da "Tabela completa" de Pedidos SÓ existia em memória (variável JS) — se a
    aba recarregasse por qualquer motivo (celular derrubando a aba em segundo plano por
@@ -3067,6 +3079,7 @@ function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa,fornece
   return novoItem;
 }
 function addPedido(){
+  if(!pedidosSincronizadosOk){mostrarAvisoSincronizacaoFalhou();return;}
   const qtd=parseFloat((el('qtdPlan').value||'').replace(',','.'))||0;if(qtd<=0)return;
   const tipo=el('tipoPlan').value;
   const unid=tipoTemSubQtd(tipo)?(parseInt(el('unidPorCaixa').value)||null):null;
@@ -3289,6 +3302,16 @@ function updateSalvarLabel(){
   el('salvarLabel').textContent=t>0?`Salvar pedido (${t} iten${t===1?'':'s'})`:'Salvar pedido';
 }
 function salvarTabela(){
+  // Trava de segurança (bug real 21/08/2026, loja Hortifruti 9 de Julho): se o
+  // carregamento dos pedidos já salvos dessa loja falhou (ou ainda não terminou),
+  // `itensPedido` pode não refletir o que já existe no banco — salvar nesse estado
+  // é exatamente o que gerava pedido duplicado (a pessoa via a caixinha vazia,
+  // achava que precisava digitar de novo, e cada "novo" produto virava uma segunda
+  // linha em cima da que já existia). Bloqueia até confirmar um carregamento OK.
+  if(!pedidosSincronizadosOk){
+    mostrarAvisoSincronizacaoFalhou();
+    return;
+  }
   saveDraftFromDOM();let n=0;const invalidos=[];
   Object.keys(PRODUTOS).forEach(cat=>{PRODUTOS[cat].forEach(p=>{
     const draftVal=tabelaDraft[cat][p];
@@ -6798,6 +6821,7 @@ async function excluirProduto(id,nome){
 
 async function carregarDadosDaLoja(){
   if(!currentLojaId)return;
+  pedidosSincronizadosOk=false;
   produtosGerenciarCache=null;
   await carregarCategorias();
   await carregarProdutos();
@@ -6837,6 +6861,17 @@ async function carregarDadosDaLoja(){
       }));
       const maxId = Math.max(0, ...itensPedido.map(p=>p.id));
       if(maxId>=nextId) nextId = maxId+1;
+      pedidosSincronizadosOk=true;
+    } else {
+      // Bug real (loja Hortifruti 9 de Julho, 21/08/2026): quando só ESSA consulta
+      // falhava (conexão ruim), o código antigo simplesmente pulava e seguia em
+      // frente sem avisar nada — `itensPedido` ficava com o valor antigo (vazio, se
+      // fosse o primeiro carregamento). A tabela de pedidos então parecia vazia,
+      // mesmo com os pedidos já salvos no banco, e quem tava digitando achava que
+      // tinha "sumido" e digitava tudo de novo — duplicando cada item. Agora avisa
+      // bem visível e trava o salvamento (ver salvarTabela) até recarregar com sucesso.
+      pedidosSincronizadosOk=false;
+      mostrarAvisoSincronizacaoFalhou();
     }
 
     // Compras
@@ -6912,7 +6947,18 @@ async function carregarDadosDaLoja(){
     }catch(e){}
 
   }catch(e){
-    showToast('Aviso: não foi possível sincronizar com o servidor. Trabalhando offline.');
+    pedidosSincronizadosOk=false;
+    mostrarAvisoSincronizacaoFalhou();
+  }
+}
+// Aviso bem visível (não um toast de 2s fácil de não ver) de que os pedidos já
+// salvos podem não ter carregado — chamado toda vez que carregarDadosDaLoja()
+// falha em trazer itens_pedido. Enquanto isso não resolver (recarregar com
+// sucesso), salvarTabela() fica bloqueado — ver checagem lá dentro.
+function mostrarAvisoSincronizacaoFalhou(){
+  showToast('⚠️ Não deu pra confirmar os pedidos já salvos — NÃO digite de novo, recarregue a página primeiro.');
+  if(typeof alert==='function'){
+    alert('Não foi possível carregar os pedidos já salvos dessa loja (conexão instável).\n\nNÃO digite os pedidos de novo agora — eles podem já estar salvos e isso criaria duplicado. Recarregue a página e tente novamente antes de continuar.');
   }
 }
 
