@@ -6166,6 +6166,7 @@ async function garantirCategoriasDoImport(brutas,lojaId){
   if(data){categoriasTodas=data;categorias=categoriasTodas.filter(c=>c.ativa);}
   return{criadas:novasLinhas.length,erro:null};
 }
+function normProdutoNome(s){return (s||'').toLowerCase().replace(/\s+/g,' ').trim();}
 function resolverLinhasImport(brutas,tipo){
   const resultado=[];const erros=[];
   brutas.forEach((r,idx)=>{
@@ -6232,10 +6233,25 @@ async function importarCsvGerenciar(tipo){
       if(erro){showToast(traduzErro(erro,'Erro ao criar categorias novas: '));return;}
       if(criadas){showToast(`${criadas} categoria(s) nova(s) criada(s) automaticamente!`);renderTodosSeletoresCategoria();}
     }
-    const {resultado,erros}=resolverLinhasImport(brutas,tipo);
+    let {resultado,erros}=resolverLinhasImport(brutas,tipo);
     if(!resultado.length){
       showToast(erros.length?erros[0]:'Nenhum item válido encontrado no arquivo. Confira o formato do CSV.');
       return;
+    }
+    // Produtos "quase iguais" a um já cadastrado (só maiúscula/espaço) não entram —
+    // bug real (loja 9 de Julho): "Melão galia" importado com grafia diferente de
+    // "Melão Galia" virou um produto separado pro app, duplicando pedido e compra
+    // sem ninguém perceber. Ver fix-duplicacao-produto-quase-igual-2026-08-26.md.
+    if(tipo==='produtos'){
+      const pulados=[];
+      resultado=resultado.filter(r=>{
+        const normNovo=normProdutoNome(r.nome);
+        const jaExiste=(PRODUTOS[r.categoria]||[]).some(p=>normProdutoNome(p)===normNovo&&p!==r.nome);
+        if(jaExiste)pulados.push(r.nome);
+        return !jaExiste;
+      });
+      if(pulados.length)erros.push(...pulados.map(n=>`"${n}" já existe cadastrado (só muda maiúscula/espaço) — não importado`));
+      if(!resultado.length){showToast(erros.length?erros[0]:'Nenhum item novo pra importar.');return;}
     }
     showToast(`Importando ${resultado.length} item(ns)…`);
     let error;
@@ -6286,6 +6302,7 @@ function produtoPadrao(cat,nome){
   return (PRODUTO_INFO[cat]&&PRODUTO_INFO[cat][nome])||{tipo:'caixa',unidPorCaixa:null};
 }
 let editingProdutoId=null;
+let editingProdutoNomeOriginal=null;
 async function renderRelatorioSemanalPedidos(){
   const cont=el('relatorioSemanalPedidos');if(!cont)return;
   cont.innerHTML='<p style="font-size:13px;color:var(--text3);">Carregando…</p>';
@@ -6767,6 +6784,7 @@ async function excluirTodosProdutosCategoria(){
 }
 function editProduto(id,nome,categoria,tipo,unidPorCaixa){
   editingProdutoId=id;
+  editingProdutoNomeOriginal=nome;
   el('novoProdutoNome').value=nome;
   el('novoProdutoCategoria').value=categoria;
   el('novoProdutoTipo').value=tipo||'caixa';
@@ -6778,6 +6796,7 @@ function editProduto(id,nome,categoria,tipo,unidPorCaixa){
 }
 function cancelEditProduto(){
   editingProdutoId=null;
+  editingProdutoNomeOriginal=null;
   el('novoProdutoNome').value='';
   el('novoProdutoTipo').value='caixa';
   el('novoProdutoUnidCx').value='';
@@ -6791,6 +6810,22 @@ async function adicionarProduto(){
   const tipo=el('novoProdutoTipo').value;
   const unidPorCaixa=tipoTemSubQtd(tipo)?(parseInt(el('novoProdutoUnidCx').value)||null):null;
   if(!nome){showToast('Digite o nome do produto');return;}
+  // Bloqueia produto "quase igual" a um já cadastrado (só muda maiúscula/minúscula
+  // ou espaço) — bug real encontrado na loja 9 de Julho: "Melão Galia" x "Melão galia"
+  // (e o mesmo com Farinha Fina/Grossa) viraram DOIS produtos diferentes pro app, cada
+  // um com seu próprio "já pedido" — pedido e compra ficavam duplicados sem ninguém
+  // perceber, porque visualmente os dois nomes parecem a mesma coisa. Ver
+  // fix-duplicacao-produto-quase-igual-2026-08-26.md.
+  const normNovo=normProdutoNome(nome);
+  const conflito=(PRODUTOS[categoria]||[]).find(p=>{
+    if(normProdutoNome(p)!==normNovo)return false;
+    if(editingProdutoId!==null&&p===editingProdutoNomeOriginal)return false; // editando o próprio, sem trocar o nome
+    return p!==nome; // grafia idêntica cai no upsert normal (onConflict já resolve)
+  });
+  if(conflito){
+    showToast(`Já existe "${conflito}" cadastrado nessa categoria (só muda maiúscula ou espaço) — use o produto existente pra não duplicar pedidos.`);
+    return;
+  }
   try{
     if(editingProdutoId!==null){
       const {error}=await db.from('produtos').update({nome,categoria,tipo,unid_por_caixa:unidPorCaixa}).eq('id',editingProdutoId);
