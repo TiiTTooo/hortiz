@@ -1686,6 +1686,12 @@ let currentUser=null,currentLojaId=1,nextId=20,nextCompraId=1;
 let fornCustom={fruta:[],legume:[],verdura:[]}; // fornecedores adicionados/editados pelo usuário
 let editingFornId=null;
 let margemCustom={}; // margemCustom[produto] = {tipo:'pct'|'valor', valor:number}
+// Preço final calculado NO BANCO (RPC preco_final_por_produto), usado só pelo papel
+// 'supervisor' — desde 2026-08-25 ela não tem mais acesso de leitura direto às
+// tabelas margem_global/margens_custom (RLS restrita a 'manager'), então o preço
+// final não pode mais ser calculado no navegador dela a partir de margemCustom.
+// mapa: {produto: {categoria, precoFinal, qtdComprada}}
+let precoFinalRPC={};
 let editingLojaId=null,editingUserId=null;
 // ═══════════════════════════════════════════════════════════════
 // CONEXÃO SUPABASE — backend real
@@ -6968,6 +6974,20 @@ async function carregarDadosDaLoja(){
       if(mgLabel)mgLabel.textContent=pct+'%';
     }catch(e){}
 
+    // Preço final via RPC (banco) — só pro papel Supervisor(a), que desde
+    // 2026-08-25 não tem mais leitura direta de margem_global/margens_custom.
+    // A função no banco calcula o preço com a margem real e devolve só o
+    // resultado, sem expor custo nem % de margem pro navegador dela.
+    precoFinalRPC={};
+    if(currentUser&&currentUser.role==='supervisor'){
+      try{
+        const {data:pfData,error:pfErr}=await db.rpc('preco_final_por_produto',{p_loja_id:currentLojaId});
+        if(!pfErr&&pfData){
+          pfData.forEach(r=>{precoFinalRPC[r.produto]={categoria:r.categoria,precoFinal:parseFloat(r.preco_final),qtdComprada:parseFloat(r.qtd_comprada)};});
+        }
+      }catch(e){}
+    }
+
   }catch(e){
     pedidosSincronizadosOk=false;
     mostrarAvisoSincronizacaoFalhou();
@@ -7323,6 +7343,13 @@ function renderPrecosMedia(){
 // tabela de "Preço por Produto" (renderPrecoFinal) e pelo relatório de valores finais
 // da Supervisor(a) (calcRelFinalTotals), pra não duplicar a mesma conta em dois lugares.
 function mapaPrecoFinalPorProduto(){
+  // Supervisor(a) não tem mais leitura direta de margem_global/margens_custom
+  // no banco (RLS restrita a 'manager' desde 2026-08-25) — pra ela, o preço
+  // final vem pronto do banco via RPC (ver carregarDadosDaLoja), calculado do
+  // lado de lá sem nunca expor custo nem % de margem pro navegador dela.
+  if(currentUser&&currentUser.role==='supervisor'){
+    return precoFinalRPC;
+  }
   const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
   compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
     if(!myHist.find(h=>h.produto===c.produto&&h.data===currentDate&&h.valor===c.valorUnit)){
