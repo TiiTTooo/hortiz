@@ -1114,6 +1114,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-ghost" onclick="limparMargensCustom()" style="white-space:nowrap;color:var(--red);"><i class="ti ti-refresh"></i> Resetar</button>
             </div>
           </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
+            <button class="btn-ghost btn-sm" onclick="precosMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
+            <input type="month" id="precosMesFiltro" onchange="renderPrecosMedia()" style="flex:1;text-align:center;"/>
+            <button class="btn-ghost btn-sm" onclick="precosMesMudar(1)" title="Próximo mês" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">
             <select id="precoCatFilter" onchange="renderPrecosMedia()" style="flex:1;min-width:110px;">
               <option value="">Todas</option>
@@ -1138,7 +1143,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <tbody id="precosTableBody"></tbody>
             </table>
           </div>
-          <p style="font-size:12px;color:var(--text3);margin-top:.75rem;text-align:center;">Edite % ou R$ diretamente em cada linha e clique em <i class="ti ti-device-floppy" style="font-size:11px;"></i> para salvar. Campos em âmbar = margem personalizada.</p>
+          <p style="font-size:12px;color:var(--text3);margin-top:.75rem;text-align:center;">Custo médio calculado com as compras confirmadas no mês selecionado acima (média por dia comprado, não por nota). Edite % ou R$ diretamente em cada linha e clique em <i class="ti ti-device-floppy" style="font-size:11px;"></i> para salvar. Campos em âmbar = margem personalizada.</p>
         </div>
 
         <!-- VIEW: VARIAÇÃO DE PREÇOS (era histórico de preço dos relatórios) -->
@@ -7228,33 +7233,85 @@ function getPrecoSugerido(prod,media){
   if(m.tipo==='valor')return media+m.valor;
   return media*(1+m.valor/100);
 }
+// Garante que o seletor de mês da aba de Preços comece no mês corrente,
+// sem sobrescrever um mês que a pessoa já tenha escolhido.
+function garantirMesPrecoPadrao(){
+  const elMes=el('precosMesFiltro');
+  if(elMes&&!elMes.value){
+    const d=new Date();
+    elMes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
+}
+function precosMesMudar(delta){
+  garantirMesPrecoPadrao();
+  const elMes=el('precosMesFiltro');
+  const [y,m]=elMes.value.split('-').map(Number);
+  const dt=new Date(y,m-1+delta,1);
+  elMes.value=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+  renderPrecosMedia();
+}
+// Custo médio de cada produto DENTRO do mês calendário informado ('YYYY-MM').
+// Regra pedida: a média não é por nota de compra nem por cada dia do mês —
+// primeiro tira a média das compras de CADA DIA que teve compra (um dia com
+// 3 notas não pesa mais que um dia com 1), depois tira a média entre esses
+// dias. Produto sem nenhuma compra no mês simplesmente não entra no mapa —
+// quem chama decide como mostrar "sem compra".
+function custoMedioMensalPorProduto(mesSel){
+  const porProduto={};
+  const addRegistro=(produto,categoria,data,valorUnit,valorCx,temUnid)=>{
+    if(!porProduto[produto]) porProduto[produto]={categoria,porDia:{}};
+    if(!porProduto[produto].porDia[data]) porProduto[produto].porDia[data]=[];
+    porProduto[produto].porDia[data].push({valorUnit,valorCx,temUnid});
+  };
+  compras
+    .filter(c=>c.lojaId===currentLojaId&&c.data&&c.data.slice(0,7)===mesSel)
+    .forEach(c=>addRegistro(c.produto,c.categoria,c.data,(c.custoUnitario||c.valorUnit),c.valorUnit,!!c.unidPorCaixa));
+  priceHistory
+    .filter(h=>h.lojaId===currentLojaId&&h.data&&h.data.slice(0,7)===mesSel)
+    .forEach(h=>{
+      const vUnit=h.custoUnitario||h.valor;
+      // evita duplicar o que já veio de "compras" (mesmo produto/dia/valor)
+      const jaTem=((porProduto[h.produto]&&porProduto[h.produto].porDia[h.data])||[]).some(r=>r.valorUnit===vUnit);
+      if(!jaTem) addRegistro(h.produto,h.categoria,h.data,vUnit,h.valor,!!h.unidPorCaixa);
+    });
+
+  const mapa={};
+  Object.keys(porProduto).forEach(prod=>{
+    const d=porProduto[prod];
+    const dias=Object.keys(d.porDia);
+    const mediasDia  =dias.map(dia=>{const regs=d.porDia[dia];return regs.reduce((a,r)=>a+r.valorUnit,0)/regs.length;});
+    const mediasDiaCx=dias.map(dia=>{const regs=d.porDia[dia];return regs.reduce((a,r)=>a+r.valorCx,0)/regs.length;});
+    const media  =mediasDia.reduce((a,v)=>a+v,0)/mediasDia.length;
+    const mediaCx=mediasDiaCx.reduce((a,v)=>a+v,0)/mediasDiaCx.length;
+    const temUnid=dias.some(dia=>d.porDia[dia].some(r=>r.temUnid));
+    mapa[prod]={categoria:d.categoria,media,mediaCx,temUnid,diasComprados:dias.length};
+  });
+  return mapa;
+}
 function renderPrecosMedia(){
+  garantirMesPrecoPadrao();
   const globalPct = parseInt(el('margemRange').value);
   const catF      = el('precoCatFilter').value;
   const prodFiltro= (el('precoProdFiltro').value||'').toLowerCase();
+  const mesSel    = el('precosMesFiltro').value;
 
-  const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
-  compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
-    if(!myHist.find(h=>h.produto===c.produto&&h.data===currentDate&&h.valor===c.valorUnit)){
-      myHist.push({produto:c.produto,categoria:c.categoria,data:currentDate,valor:c.valorUnit,fornecedor:c.fornecedor,lojaId:currentLojaId});
-    }
+  const mediaMap=custoMedioMensalPorProduto(mesSel);
+
+  // Lista de produtos = catálogo ativo da loja (pra mostrar "sem compra"
+  // também), mais qualquer produto com compra no mês que porventura não
+  // esteja mais no catálogo ativo (renomeado/desativado).
+  let listaProdutos=[];
+  Object.keys(PRODUTOS||{}).forEach(cat=>{
+    (PRODUTOS[cat]||[]).forEach(nome=>listaProdutos.push({produto:nome,categoria:cat}));
+  });
+  Object.keys(mediaMap).forEach(prod=>{
+    if(!listaProdutos.find(p=>p.produto===prod)) listaProdutos.push({produto:prod,categoria:mediaMap[prod].categoria});
   });
 
-  const byProd={};
-  myHist.forEach(h=>{
-    if(!byProd[h.produto]) byProd[h.produto]={categoria:h.categoria,valores:[],valoresCx:[],temUnid:false};
-    const vUnit=h.custoUnitario||h.valor;
-    byProd[h.produto].valores.push(vUnit);
-    byProd[h.produto].valoresCx.push(h.valor);
-    if(h.unidPorCaixa) byProd[h.produto].temUnid=true;
-  });
-
-  let rows=Object.keys(byProd).map(prod=>{
-    const d=byProd[prod];
-    const vals=d.valores;
-    const media=vals.reduce((a,v)=>a+v,0)/vals.length;
-    const mediaCx=d.valoresCx.reduce((a,v)=>a+v,0)/d.valoresCx.length;
-    return {produto:prod,categoria:d.categoria,media,mediaCx,temUnid:d.temUnid,count:vals.length};
+  let rows=listaProdutos.map(({produto,categoria})=>{
+    const d=mediaMap[produto];
+    if(!d) return {produto,categoria,semCompra:true};
+    return {produto,categoria:d.categoria||categoria,semCompra:false,media:d.media,mediaCx:d.mediaCx,temUnid:d.temUnid};
   });
 
   if(catF)       rows=rows.filter(r=>r.categoria===catF);
@@ -7266,13 +7323,24 @@ function renderPrecosMedia(){
   rows.forEach(r=>{window._precosPidMap[r.produto.replace(/[^a-z0-9]/gi,'_')]=r.produto;});
 
   el('precosTableBody').innerHTML=rows.length?rows.map(r=>{
+    const pid=r.produto.replace(/[^a-z0-9]/gi,'_');
+    if(r.semCompra){
+      return `<tr data-prod="${esc(r.produto)}" style="border-bottom:1px solid var(--border);opacity:.55;">
+  <td style="padding:8px 10px;min-width:130px;">
+    <div style="display:flex;align-items:center;gap:7px;">
+      <div style="width:8px;height:8px;border-radius:50%;background:${corCat(r.categoria)};flex-shrink:0;"></div>
+      <span style="font-size:13px;font-weight:500;">${esc(r.produto)}</span>
+    </div>
+  </td>
+  <td colspan="5" style="padding:8px 10px;text-align:center;font-size:12px;color:var(--text3);font-style:italic;">Sem compra neste mês</td>
+</tr>`;
+    }
     const mc       = margemCustom[r.produto];
     const isCustom = !!mc;
     const sugerido = getPrecoSugerido(r.produto,r.media);
     const diff     = r.media>0?((sugerido-r.media)/r.media*100).toFixed(1):0;
     const curPct   = mc&&mc.tipo==='pct' ? mc.valor : globalPct;
     const curRs    = mc&&mc.tipo==='valor' ? mc.valor.toFixed(2) : '';
-    const pid      = r.produto.replace(/[^a-z0-9]/gi,'_');
     const rowBg    = isCustom ? 'background:rgba(255,184,48,.06);' : '';
     const borderPct= isCustom&&mc.tipo==='pct' ? 'var(--amber)' : 'var(--border2)';
     const borderRs = isCustom&&mc.tipo==='valor' ? 'var(--amber)' : 'var(--border2)';
@@ -7332,7 +7400,7 @@ function renderPrecosMedia(){
   </td>
 </tr>`;
   }).join('')
-  :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum dado disponível. Confirme compras para alimentar o histórico.</td></tr>`;
+  :`<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text3);">Nenhum produto encontrado.</td></tr>`;
 }
 
 // Versão enxuta da tabela de preços, só pro papel 'supervisor' (aba "Preço por Produto"):
@@ -7350,31 +7418,23 @@ function mapaPrecoFinalPorProduto(){
   if(currentUser&&currentUser.role==='supervisor'){
     return precoFinalRPC;
   }
-  const myHist = priceHistory.filter(h=>h.lojaId===currentLojaId);
-  compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
-    if(!myHist.find(h=>h.produto===c.produto&&h.data===currentDate&&h.valor===c.valorUnit)){
-      myHist.push({produto:c.produto,categoria:c.categoria,data:currentDate,valor:c.valorUnit,fornecedor:c.fornecedor,lojaId:currentLojaId});
-    }
-  });
+  // Custo médio do MÊS CORRENTE (mês de currentDate), mesma regra de
+  // renderPrecosMedia(): média por dia comprado, não por nota nem por dia
+  // do mês inteiro. Produto sem compra nesse mês não entra no mapa.
+  const mesRef=currentDate.substring(0,7);
+  const mediaMap=custoMedioMensalPorProduto(mesRef);
 
-  const byProd={};
-  myHist.forEach(h=>{
-    if(!byProd[h.produto]) byProd[h.produto]={categoria:h.categoria,valores:[]};
-    byProd[h.produto].valores.push(h.custoUnitario||h.valor);
-  });
-
-  // Quantidade total já comprada de cada produto (soma de todas as compras
-  // registradas dessa loja) — informação extra pra tabela de Preço por Produto.
+  // Quantidade total já comprada de cada produto (soma de TODAS as compras
+  // já registradas dessa loja, sem filtro de mês) — informação extra pra
+  // tabela de Preço por Produto, separada do cálculo de custo médio.
   const qtdPorProduto={};
   compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
     qtdPorProduto[c.produto]=(qtdPorProduto[c.produto]||0)+c.qtd;
   });
 
   const mapa={};
-  Object.keys(byProd).forEach(prod=>{
-    const vals=byProd[prod].valores;
-    const media=vals.reduce((a,v)=>a+v,0)/vals.length;
-    mapa[prod]={categoria:byProd[prod].categoria,precoFinal:getPrecoSugerido(prod,media),qtdComprada:qtdPorProduto[prod]||0};
+  Object.keys(mediaMap).forEach(prod=>{
+    mapa[prod]={categoria:mediaMap[prod].categoria,precoFinal:getPrecoSugerido(prod,mediaMap[prod].media),qtdComprada:qtdPorProduto[prod]||0};
   });
   return mapa;
 }
