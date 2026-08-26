@@ -1095,7 +1095,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="card" style="margin-bottom:1rem;">
             <div class="card-label">Margem global</div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
-              <input type="range" id="margemRange" min="10" max="200" value="40" oninput="onMargemChange()" onchange="salvarMargemGlobal()" style="flex:1;accent-color:var(--accent);"/>
+              <input type="range" id="margemRange" min="10" max="1000" value="40" oninput="onMargemChange()" onchange="salvarMargemGlobal()" style="flex:1;accent-color:var(--accent);"/>
               <span id="margemLabel" style="font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:48px;">40%</span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -7361,7 +7361,7 @@ function renderPrecosMedia(){
   </td>
   <td style="padding:5px 8px;width:120px;">
     <div style="display:flex;align-items:center;gap:3px;">
-      <input type="number" min="0" max="999" step="1" value="${curPct}"
+      <input type="number" min="0" max="1000" step="1" value="${curPct}"
         data-pid="${pid}" data-tipo="pct"
         oninput="precosPreview(this,'pct','${pid}',${r.media})"
         style="width:62px;padding:5px 6px;font-size:13px;text-align:right;background:var(--bg3);border:1px solid ${borderPct};border-radius:6px;color:var(--text);font-family:inherit;"/>
