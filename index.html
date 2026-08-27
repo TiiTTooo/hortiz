@@ -1113,6 +1113,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
               <button class="btn-ghost" onclick="aplicarMargemTodos()" style="white-space:nowrap;"><i class="ti ti-copy"></i> Aplicar a todos</button>
               <button class="btn-ghost" onclick="limparMargensCustom()" style="white-space:nowrap;color:var(--red);"><i class="ti ti-refresh"></i> Resetar</button>
             </div>
+            <div id="precosMultiLojaWrap" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);">
+              <button class="btn-primary" onclick="aplicarPrecosTodasMinhasLojas()" style="white-space:nowrap;width:100%;"><i class="ti ti-building-store"></i> Aplicar essas margens em todas as minhas lojas</button>
+              <p style="font-size:11px;color:var(--text3);margin-top:.4rem;">Copia a margem global e as margens personalizadas por produto desta loja pras suas outras lojas — cada loja continua calculando o preço final em cima do PRÓPRIO custo médio, só a margem de lucro fica igual.</p>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
             <button class="btn-ghost btn-sm" onclick="precosMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
@@ -7255,6 +7259,37 @@ async function aplicarMargemTodos(){
     }
   }catch(e){showToast('Erro ao salvar margens no banco.');}
 }
+async function aplicarPrecosTodasMinhasLojas(){
+  // Copia a margem global (%) e as margens personalizadas por produto (margemCustom,
+  // já carregadas só pra currentLojaId) pras outras lojas que esse login acessa
+  // (`lojas` já vem filtrada por loja_membros/user_id — ver carregarMinhasLojas()).
+  // Cada loja de destino CONTINUA calculando o preço final em cima do PRÓPRIO custo
+  // médio — só a margem (a "regra" de lucro) fica igual entre as lojas, não o preço
+  // final em R$, que pode variar se o custo variar de loja pra loja.
+  const outras=(lojas||[]).filter(l=>l.id!==currentLojaId);
+  if(!outras.length){showToast('Você só tem acesso a uma loja.');return;}
+  const globalPct=parseInt(el('margemRange').value);
+  const produtosComMargemCustom=Object.keys(margemCustom||{});
+  const nomesLojas=outras.map(l=>l.nome).join(', ');
+  if(!confirm(`Aplicar a margem global (${globalPct}%)${produtosComMargemCustom.length?` e as ${produtosComMargemCustom.length} margem(ns) personalizada(s) por produto`:''} desta loja em: ${nomesLojas}?\n\nIsso substitui a margem que essas lojas já tinham configurada.`))return;
+  try{
+    const rowsGlobal=outras.map(l=>({loja_id:l.id,percentual:globalPct,updated_at:new Date().toISOString()}));
+    const {error:errGlobal}=await db.from('margem_global').upsert(rowsGlobal,{onConflict:'loja_id'});
+    if(errGlobal){showToast(traduzErro(errGlobal,'Erro ao aplicar margem global: '));return;}
+    if(produtosComMargemCustom.length){
+      const rowsCustom=[];
+      outras.forEach(l=>{
+        produtosComMargemCustom.forEach(prod=>{
+          const m=margemCustom[prod];
+          rowsCustom.push({loja_id:l.id,produto:prod,tipo:m.tipo,valor:m.valor,updated_at:new Date().toISOString()});
+        });
+      });
+      const {error:errCustom}=await db.from('margens_custom').upsert(rowsCustom,{onConflict:'loja_id,produto'});
+      if(errCustom){showToast(traduzErro(errCustom,'Erro ao aplicar margens personalizadas: '));return;}
+    }
+    showToast(`Margem aplicada em ${outras.length} loja(s): ${nomesLojas}.`);
+  }catch(e){showToast(traduzErro(e,'Erro ao aplicar em outras lojas: '));}
+}
 async function limparMargensCustom(){
   margemCustom={};renderPrecosMedia();showToast('Margens personalizadas resetadas');
   const {error:_e1}=await db.from('margens_custom').delete().eq('loja_id',currentLojaId);if(_e1)showToast(traduzErro(_e1,'Erro ao resetar no banco: '));
@@ -7355,6 +7390,10 @@ function custoMedioMensalPorProduto(mesSel){
 }
 function renderPrecosMedia(){
   garantirMesPrecoPadrao();
+  // Botão "aplicar em todas as minhas lojas" só faz sentido pra quem tem mais de uma
+  // loja vinculada ao login (`lojas` já vem só com as lojas que essa pessoa acessa).
+  const multiWrap=el('precosMultiLojaWrap');
+  if(multiWrap)multiWrap.style.display=(lojas&&lojas.length>1)?'':'none';
   const globalPct = parseInt(el('margemRange').value);
   const catF      = el('precoCatFilter').value;
   const prodFiltro= (el('precoProdFiltro').value||'').toLowerCase();
