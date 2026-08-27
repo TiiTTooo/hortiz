@@ -3074,6 +3074,20 @@ function itemPedidoExistentePorProduto(categoria,produto){
     i.produto===produto&&i.categoria===categoria
   );
 }
+function itemResolvidoHojePorProduto(categoria,produto){
+  // Acha um item do MESMO dia já respondido (comprado ou não comprado) — usado só pra
+  // AVISAR, não pra editar. Bug real (lojas 36/38/40/41, achado varrendo as últimas 3
+  // semanas): depois de confirmar a compra de um produto, a caixinha da Tabela volta a
+  // ficar em branco (só mostra PENDENTE, e o item confirmado não é mais pendente) — quem
+  // tá lançando pedido e compra juntos no mesmo dia via a caixinha vazia de novo, achava
+  // que não tinha pedido ainda, digitava e salvava de novo, duplicando pedido E compra
+  // (mesmo produto, mesma qtd, poucos minutos/horas depois). Ver
+  // fix-duplicacao-produto-quase-igual-2026-08-26.md.
+  return itensPedido.find(i=>
+    i.lojaId===currentLojaId&&i.data===currentDate&&(i.status==='comprado'||i.status==='nao_comprado')&&
+    i.produto===produto&&i.categoria===categoria
+  );
+}
 function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa,fornecedor}){
   // Usado pelo fluxo "item por item" (view-lista) — aqui faz sentido continuar somando:
   // cada "Adicionar ao pedido" é uma ação explícita de adicionar mais uma quantidade.
@@ -3240,12 +3254,16 @@ function renderTabelaGrid(){
       const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:(jaPedido>0?jaPedido:'');
       const hasQ=parseFloat(d)>0;
       const aberto=tabelaFornAbertos.has(cat+'|'+p);
+      // Só avisa "já resolvido hoje" quando a caixinha tá vazia — se já tem pendente
+      // (jaPedido>0) o normal é editar/aumentar em cima dele, não é o caso confuso.
+      const resolvidoHoje=(!hasQ)?itemResolvidoHojePorProduto(cat,p):null;
       return`<tr class="${hasQ?'has-qty':''}">
         <td style="font-size:13px;cursor:pointer;" onclick="toggleTabelaForn('${cat}','${esc(escJs(p))}')">
           <div style="display:flex;align-items:center;gap:6px;">
             <i class="ti ti-chevron-${aberto?'down':'right'}" style="font-size:12px;flex-shrink:0;color:var(--text3);"></i>
             <span>${p}</span>
             ${df?`<i class="ti ti-truck" style="font-size:12px;flex-shrink:0;color:var(--accent);" title="Fornecedor: ${esc(df)}"></i>`:''}
+            ${resolvidoHoje?`<i class="ti ti-${resolvidoHoje.status==='comprado'?'check':'ban'}" style="font-size:12px;flex-shrink:0;color:${resolvidoHoje.status==='comprado'?'var(--success,#30a46c)':'var(--text3)'};" title="${resolvidoHoje.status==='comprado'?'Já comprado hoje':'Marcado como não comprado hoje'}: ${resolvidoHoje.qtd}"></i>`:''}
           </div>
         </td>
         <td><input type="number" min="0" step="1" id="tq_${i}" value="${d}" oninput="tabelaDraft['${cat}']['${esc(escJs(p))}'] = Math.round(+this.value||0)||'';if(+this.value)this.value=Math.round(+this.value);this.closest('tr').className=this.value>0?'has-qty':'';updateSalvarLabel();persistDraftLocal()"/></td>
@@ -3354,7 +3372,19 @@ function salvarTabela(){
       return;
     }
     if(existente){existente.qtd=qtd;existente.tipo=tipo;existente.unidPorCaixa=unid;existente.fornecedor=forn;syncPedidoUpdate(existente);}
-    else adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,fornecedor:forn});
+    else {
+      // Produto sem pendente, mas já resolvido (comprado/não comprado) HOJE — pedido novo
+      // em cima disso é o padrão exato do bug real achado nas lojas 36/38/40/41 (pedido e
+      // compra duplicados minutos/horas depois, mesma qtd): a pessoa lança pedido+compra
+      // junto, a caixinha esvazia depois de comprar, e ela digita de novo achando que
+      // ainda não tinha pedido. Confirma antes de criar, em vez de duplicar direto.
+      const resolvidoHoje=itemResolvidoHojePorProduto(cat,p);
+      if(resolvidoHoje&&typeof confirm==='function'){
+        const acao=resolvidoHoje.status==='comprado'?'já foi marcado como COMPRADO':'já foi marcado como NÃO comprado';
+        if(!confirm(`"${p}" ${acao} hoje (${resolvidoHoje.qtd} ${tipoAbrev(resolvidoHoje.tipo)}). Tem certeza que quer lançar mais ${qtd} como um pedido novo?\n\nSe já comprou isso hoje, provavelmente não precisa pedir de novo.`))return;
+      }
+      adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,fornecedor:forn});
+    }
     n++;
   });});
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
