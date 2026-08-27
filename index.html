@@ -7443,7 +7443,12 @@ function renderPrecosMedia(){
     const isCustom = !!mc;
     const sugerido = getPrecoSugerido(r.produto,r.media);
     const diff     = r.media>0?((sugerido-r.media)/r.media*100).toFixed(1):0;
-    const curPct   = mc&&mc.tipo==='pct' ? mc.valor : globalPct;
+    // Quando o produto tem margem custom do tipo "valor" (R$ fixo), o quadrado de %
+    // ficava travado mostrando o percentual GLOBAL (ex: 75), enquanto o "+94.0%" logo
+    // abaixo (calculado certo, a partir do preço sugerido real) mostrava o percentual
+    // verdadeiro daquele produto — os dois exibiam número diferente pro mesmo produto.
+    // Calcula o equivalente em % aqui também, pra bater com o resto da linha.
+    const curPct   = mc ? (mc.tipo==='pct' ? mc.valor : (r.media>0 ? Math.round((mc.valor/r.media)*100) : 0)) : globalPct;
     const curRs    = mc&&mc.tipo==='valor' ? mc.valor.toFixed(2) : '';
     const rowBg    = isCustom ? 'background:rgba(255,184,48,.06);' : '';
     const borderPct= isCustom&&mc.tipo==='pct' ? 'var(--amber)' : 'var(--border2)';
