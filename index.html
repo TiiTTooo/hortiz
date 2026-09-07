@@ -2648,8 +2648,22 @@ function atualizarLabelsPreco(){
 /* ── SUBSCRIPTION SYSTEM ── */
 // sub: {status:'active'|'expired'|'trial'|'grace', expiresAt: Date, trialDaysLeft: number}
 // 'grace': assinatura venceu (status 'vencida' no banco) mas ainda dentro da carência de
-// CARENCIA_VENCIMENTO_DIAS dias após o vencimento — acesso continua liberado, só avisa.
-const CARENCIA_VENCIMENTO_DIAS=3;
+// DIAS_UTEIS_CARENCIA dia(s) útil(eis) após o vencimento — acesso continua liberado, só avisa.
+// Reduzido de 3 dias corridos pra 1 dia útil por pedido do Tito (2026-09-07).
+const DIAS_UTEIS_CARENCIA=1;
+// Soma diasUteis dias ÚTEIS (pula sábado/domingo) a partir de `data`, sem contar a
+// própria `data` como um dos dias somados — ex.: vencimento numa sexta + 1 dia útil
+// cai na segunda seguinte, pulando o fim de semana.
+function adicionarDiasUteis(data,diasUteis){
+  const d=new Date(data.getTime());
+  let restantes=diasUteis;
+  while(restantes>0){
+    d.setDate(d.getDate()+1);
+    const diaSemana=d.getDay();
+    if(diaSemana!==0&&diaSemana!==6)restantes--;
+  }
+  return d;
+}
 let subscription={status:'trial', expiresAt: new Date(Date.now()+3*86400000), trialDaysLeft:3, valorMensal:250, graceDiasRestantes:0};
 // Datas tipo 'date' do Postgres (ex: proxima_cobranca, trial_fim) vêm como string
 // 'YYYY-MM-DD'. `new Date('YYYY-MM-DD')` interpreta isso como meia-noite UTC, e ao
@@ -2699,14 +2713,16 @@ async function checkSubscription(){
         subscription.status='active';
         subscription.expiresAt=dataLocalDeStr(sub.proxima_cobranca)||new Date('2099-01-01');
       } else if(status==='vencida'&&sub.proxima_cobranca){
-        // Venceu, mas dá carência de CARENCIA_VENCIMENTO_DIAS dias após o vencimento
-        // antes de bloquear o acesso operacional — só bloqueia mesmo se passar disso.
+        // Venceu, mas dá carência de DIAS_UTEIS_CARENCIA dia(s) útil(eis) após o
+        // vencimento antes de bloquear o acesso operacional — só bloqueia mesmo se
+        // passar disso (pulando fim de semana no cálculo do limite).
         const vencimento=dataLocalDeStr(sub.proxima_cobranca);
         subscription.expiresAt=vencimento;
-        const diasVencida=Math.floor((new Date()-vencimento)/86400000);
-        if(diasVencida<=CARENCIA_VENCIMENTO_DIAS){
+        const limiteAcesso=adicionarDiasUteis(vencimento,DIAS_UTEIS_CARENCIA);
+        const hoje=new Date();
+        if(hoje<=limiteAcesso){
           subscription.status='grace';
-          subscription.graceDiasRestantes=Math.max(0,CARENCIA_VENCIMENTO_DIAS-diasVencida);
+          subscription.graceDiasRestantes=Math.max(0,Math.ceil((limiteAcesso-hoje)/86400000));
         } else {
           subscription.status='expired';
         }
