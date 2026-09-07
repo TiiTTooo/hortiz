@@ -557,7 +557,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
           <div class="cat-btn-bar" id="pedTabelaCatBtns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"></div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:.5rem;flex-wrap:wrap;">
             <div id="importCeiBtnWrap" style="display:none;">
-              <button class="btn-ghost btn-sm" onclick="abrirImportCei()"><i class="ti ti-file-spreadsheet"></i> Importar planilha CEI</button>
+              <button class="btn-ghost btn-sm" onclick="abrirImportCei()"><i class="ti ti-file-spreadsheet"></i> Planilha de pedido</button>
             </div>
             <button class="btn-ghost btn-sm" onclick="repetirUltimoPedido()"><i class="ti ti-repeat"></i> Repetir último pedido</button>
           </div>
@@ -1497,12 +1497,16 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
 
 <div class="modal-overlay" id="importCeiModal" onclick="if(event.target===this)fecharImportCei()">
   <div class="modal-box" style="max-width:720px;">
-    <div class="modal-head"><span class="modal-title"><i class="ti ti-file-spreadsheet"></i> Importar planilha CEI</span><button class="btn-icon" onclick="fecharImportCei()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
+    <div class="modal-head"><span class="modal-title"><i class="ti ti-file-spreadsheet"></i> Planilha de pedido</span><button class="btn-icon" onclick="fecharImportCei()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
 
     <div id="importCeiStep1">
-      <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Sobe a planilha semanal (uma aba por escola) e o sistema distribui os pedidos pra cada loja automaticamente. A data escrita na própria planilha é ignorada — você escolhe abaixo o dia em que esse pedido vai ser lançado.</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Sobe uma planilha preenchida (uma aba por loja, se você administra mais de uma) e o sistema distribui os pedidos automaticamente. A data escrita na própria planilha é ignorada — você escolhe abaixo o dia em que esse pedido vai ser lançado.</p>
+      <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:.625rem .75rem;margin-bottom:.875rem;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--text2);">Não tem a planilha ainda? Baixe um modelo já com os produtos cadastrados de cada loja.</span>
+        <button class="btn-ghost btn-sm" onclick="baixarModeloImportCei()"><i class="ti ti-download"></i> Baixar modelo</button>
+      </div>
       <div style="margin-bottom:.875rem;">
-        <label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:.375rem;">Arquivo (.xlsx)</label>
+        <label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:.375rem;">Arquivo (.xlsx) preenchido</label>
         <input type="file" id="importCeiArquivo" accept=".xlsx,.xls"/>
       </div>
       <div style="margin-bottom:1rem;">
@@ -2910,9 +2914,10 @@ function switchTab(tab){
     // pra "Apenas Pedidos" e Supervisor(a) o clique só ia esbarrar num toast
     // de acesso negado.
     const wrapIrCompras=el('pedidosIrComprasWrap');if(wrapIrCompras)wrapIrCompras.style.display=ehPedidos?'none':'';
-    // Importar planilha CEI só faz sentido pra quem lança pedido de mais de uma
-    // loja de uma vez (owner/manager/supervisor com acesso multi-loja).
-    const wrapImportCei=el('importCeiBtnWrap');if(wrapImportCei)wrapImportCei.style.display=(lojas.length>1)?'':'none';
+    // Planilha de pedido: útil pra qualquer loja (baixa modelo com o catálogo próprio
+    // e sobe preenchida depois), não só pra quem administra várias de uma vez — por
+    // isso fica visível pra qualquer papel que chega na aba Pedidos.
+    const wrapImportCei=el('importCeiBtnWrap');if(wrapImportCei)wrapImportCei.style.display='';
     // O quadro "Quantidade pedida — últimos 7 dias" só aparece pro papel "Apenas
     // Pedidos" — a Supervisor(a) agora tem a aba Relatórios própria (valor final
     // por semana/categoria), que substitui esse quadro com mais informação.
@@ -3273,12 +3278,18 @@ function repetirUltimoPedido(){
   showToast(`Preenchido com o pedido de ${formatBR(dataAnterior)} — revise e clique em Salvar pedido.`);
 }
 
-/* ── IMPORTAR PLANILHA CEI ──
+/* ── PLANILHA DE PEDIDO (importar / baixar modelo) ──
    Pedido do Tito (2026-09-07): hoje ele sobe a mesma planilha manualmente em cada uma
    das 9 lojas CEI, uma aba por escola. Aqui o sistema lê o arquivo, casa cada aba com a
    loja certa (CNPJ + nome da "Unidade" escrito na planilha — descobrimos que o CNPJ
    sozinho não é confiável, uma aba real já veio com o CNPJ de outra escola) e distribui
    os itens pra cada loja de uma vez, sempre com tela de confirmação antes de gravar.
+   Generalizado em seguida (mesmo dia) pra qualquer loja, não só CEI: Tito notou o botão
+   aparecendo pra lojas fora do padrão CEI (ex.: o Hortifruti dele mesmo) e pediu pra não
+   ficar amarrado a esse nome/formato — se vai ficar disponível pra todo mundo, tem que
+   virar uma planilha "padrão" baseada no catálogo próprio de cada loja. Por isso o botão
+   "Baixar modelo" gera um .xlsx no mesmo layout que o parser abaixo entende, já com os
+   produtos cadastrados de cada loja (uma aba por loja que o usuário administra).
    Não roda em ambiente de teste — direto em produção, por pedido explícito do Tito. */
 let importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
 
@@ -3286,6 +3297,56 @@ function normalizeNomeImportCei(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
 }
 function normalizeCnpjImportCei(s){return String(s||'').replace(/\D/g,'');}
+
+const IMPORT_CEI_LABEL_CATEGORIA={fruta:'Frutas',legume:'Legumes',verdura:'Verduras',temperos:'Temperos',outros_itens:'Outros Itens',feculentos:'Feculentos'};
+
+async function baixarModeloImportCei(){
+  const lojasDisp=lojas.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  if(!lojasDisp.length){showToast('Nenhuma loja disponível.');return;}
+  showToast('Gerando modelo…');
+  try{
+    const wb=XLSX.utils.book_new();
+    const nomesUsados={};
+    for(const l of lojasDisp){
+      const{data:catalogo}=await db.from('produtos').select('nome,categoria').eq('loja_id',l.id).eq('ativo',true).order('categoria').order('ordem').order('nome');
+      const porCategoria={};
+      (catalogo||[]).forEach(p=>{(porCategoria[p.categoria]=porCategoria[p.categoria]||[]).push(p.nome);});
+      const categorias=Object.keys(porCategoria);
+      if(!categorias.length)continue; // loja sem catálogo cadastrado ainda — não dá pra gerar modelo
+      const colEsq=[],colDir=[];
+      categorias.forEach((cat,i)=>(i%2===0?colEsq:colDir).push(cat));
+      const aoa=[];
+      const setCell=(r,c,v)=>{if(!aoa[r])aoa[r]=[];aoa[r][c]=v;};
+      setCell(0,0,`Unidade: ${l.nome}`);
+      setCell(1,0,`Endereço:${l.endereco||''}`);
+      setCell(1,5,`CNPJ:${l.cnpj||''}`);
+      setCell(4,0,'Data do pedido: ');
+      let rowEsq=6,rowDir=6;
+      colEsq.forEach(cat=>{
+        setCell(rowEsq,0,IMPORT_CEI_LABEL_CATEGORIA[cat]||cat);rowEsq++;
+        setCell(rowEsq,0,'x');setCell(rowEsq,1,'Item');setCell(rowEsq,2,'Quant');rowEsq++;
+        porCategoria[cat].forEach(nome=>{setCell(rowEsq,1,nome);rowEsq++;});
+        rowEsq++;
+      });
+      colDir.forEach(cat=>{
+        setCell(rowDir,5,IMPORT_CEI_LABEL_CATEGORIA[cat]||cat);rowDir++;
+        setCell(rowDir,5,'x');setCell(rowDir,6,'Item');setCell(rowDir,7,'Quant');rowDir++;
+        porCategoria[cat].forEach(nome=>{setCell(rowDir,6,nome);rowDir++;});
+        rowDir++;
+      });
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=[{wch:3},{wch:22},{wch:8},{wch:2},{wch:2},{wch:3},{wch:22},{wch:8}];
+      let base=(l.nome||'Loja').replace(/[\\/*?:\[\]]/g,' ').trim().substring(0,31)||'Loja';
+      let sheetName=base,n=1;
+      while(nomesUsados[sheetName]){sheetName=(base.substring(0,28)+'_'+n).substring(0,31);n++;}
+      nomesUsados[sheetName]=true;
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
+    }
+    if(!wb.SheetNames.length){showToast('Nenhuma loja tem produtos cadastrados ainda — cadastre o catálogo antes de gerar o modelo.');return;}
+    XLSX.writeFile(wb,`modelo-pedido-${new Date().toISOString().slice(0,10)}.xlsx`);
+    showToast('Modelo baixado — marque "x" e a quantidade de cada item, e suba de volta aqui.');
+  }catch(e){showToast(traduzErro(e,'Erro ao gerar modelo: '));}
+}
 
 function abrirImportCei(){
   importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
