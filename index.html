@@ -32,6 +32,7 @@ try{
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── THEME TOKENS ── */
@@ -554,7 +555,10 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
         </div>
         <div id="view-tabela" style="display:none;">
           <div class="cat-btn-bar" id="pedTabelaCatBtns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"></div>
-          <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:.5rem;flex-wrap:wrap;">
+            <div id="importCeiBtnWrap" style="display:none;">
+              <button class="btn-ghost btn-sm" onclick="abrirImportCei()"><i class="ti ti-file-spreadsheet"></i> Importar planilha CEI</button>
+            </div>
             <button class="btn-ghost btn-sm" onclick="repetirUltimoPedido()"><i class="ti ti-repeat"></i> Repetir último pedido</button>
           </div>
           <!-- Pesquisa na tabela -->
@@ -1487,6 +1491,43 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
     <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);">
       <button class="btn-ghost btn-w" id="btnVerificarPagamento" onclick="verificarPagamentoAgora()"><i class="ti ti-refresh"></i> Já paguei — verificar agora</button>
       <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:.5rem;">Pagou e não liberou na hora? Clica aí que a gente confere direto com o Asaas.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="importCeiModal" onclick="if(event.target===this)fecharImportCei()">
+  <div class="modal-box" style="max-width:720px;">
+    <div class="modal-head"><span class="modal-title"><i class="ti ti-file-spreadsheet"></i> Importar planilha CEI</span><button class="btn-icon" onclick="fecharImportCei()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
+
+    <div id="importCeiStep1">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Sobe a planilha semanal (uma aba por escola) e o sistema distribui os pedidos pra cada loja automaticamente. A data escrita na própria planilha é ignorada — você escolhe abaixo o dia em que esse pedido vai ser lançado.</p>
+      <div style="margin-bottom:.875rem;">
+        <label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:.375rem;">Arquivo (.xlsx)</label>
+        <input type="file" id="importCeiArquivo" accept=".xlsx,.xls"/>
+      </div>
+      <div style="margin-bottom:1rem;">
+        <label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:.375rem;">Lançar pedido para o dia</label>
+        <input type="date" id="importCeiData"/>
+      </div>
+      <button class="btn-primary btn-w" onclick="processarImportCei()"><i class="ti ti-scan"></i> Processar planilha</button>
+    </div>
+
+    <div id="importCeiStep2" style="display:none;">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Confira o mapeamento de cada aba pra sua loja correspondente. Casei por CNPJ e pelo nome da "Unidade" escrito na planilha — quando os dois não batem (ou um deles falta), o sistema avisa e você confirma manualmente.</p>
+      <div id="importCeiStep2Tabela" style="overflow-x:auto;"></div>
+      <div style="display:flex;gap:8px;margin-top:1rem;">
+        <button class="btn-ghost" onclick="voltarImportCeiStep1()"><i class="ti ti-arrow-left"></i> Voltar</button>
+        <button class="btn-primary" style="flex:1;" onclick="avancarImportCeiStep3()"><i class="ti ti-arrow-right"></i> Continuar</button>
+      </div>
+    </div>
+
+    <div id="importCeiStep3" style="display:none;">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Revise cada loja antes de gravar. Itens fora do padrão (comparados com os pedidos anteriores) e produtos não cadastrados precisam de confirmação manual.</p>
+      <div id="importCeiStep3Corpo"></div>
+      <div style="display:flex;gap:8px;margin-top:1rem;">
+        <button class="btn-ghost" onclick="voltarImportCeiStep2()"><i class="ti ti-arrow-left"></i> Voltar</button>
+        <button class="btn-primary" style="flex:1;" onclick="confirmarImportCei()"><i class="ti ti-check"></i> Confirmar e importar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2869,6 +2910,9 @@ function switchTab(tab){
     // pra "Apenas Pedidos" e Supervisor(a) o clique só ia esbarrar num toast
     // de acesso negado.
     const wrapIrCompras=el('pedidosIrComprasWrap');if(wrapIrCompras)wrapIrCompras.style.display=ehPedidos?'none':'';
+    // Importar planilha CEI só faz sentido pra quem lança pedido de mais de uma
+    // loja de uma vez (owner/manager/supervisor com acesso multi-loja).
+    const wrapImportCei=el('importCeiBtnWrap');if(wrapImportCei)wrapImportCei.style.display=(lojas.length>1)?'':'none';
     // O quadro "Quantidade pedida — últimos 7 dias" só aparece pro papel "Apenas
     // Pedidos" — a Supervisor(a) agora tem a aba Relatórios própria (valor final
     // por semana/categoria), que substitui esse quadro com mais informação.
@@ -3227,6 +3271,267 @@ function repetirUltimoPedido(){
   try{renderTabelaGrid();}catch(e){}
   updateSalvarLabel();
   showToast(`Preenchido com o pedido de ${formatBR(dataAnterior)} — revise e clique em Salvar pedido.`);
+}
+
+/* ── IMPORTAR PLANILHA CEI ──
+   Pedido do Tito (2026-09-07): hoje ele sobe a mesma planilha manualmente em cada uma
+   das 9 lojas CEI, uma aba por escola. Aqui o sistema lê o arquivo, casa cada aba com a
+   loja certa (CNPJ + nome da "Unidade" escrito na planilha — descobrimos que o CNPJ
+   sozinho não é confiável, uma aba real já veio com o CNPJ de outra escola) e distribui
+   os itens pra cada loja de uma vez, sempre com tela de confirmação antes de gravar.
+   Não roda em ambiente de teste — direto em produção, por pedido explícito do Tito. */
+let importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
+
+function normalizeNomeImportCei(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+}
+function normalizeCnpjImportCei(s){return String(s||'').replace(/\D/g,'');}
+
+function abrirImportCei(){
+  importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
+  const fa=el('importCeiArquivo');if(fa)fa.value='';
+  const fd=el('importCeiData');if(fd)fd.value='';
+  el('importCeiStep1').style.display='';
+  el('importCeiStep2').style.display='none';
+  el('importCeiStep3').style.display='none';
+  el('importCeiModal').classList.add('open');
+}
+function fecharImportCei(){el('importCeiModal').classList.remove('open');}
+function voltarImportCeiStep1(){el('importCeiStep2').style.display='none';el('importCeiStep1').style.display='';}
+function voltarImportCeiStep2(){el('importCeiStep3').style.display='none';el('importCeiStep2').style.display='';}
+
+function importCeiCellStr(ws,addr){const c=ws[addr];if(!c)return'';const v=(c.v===undefined||c.v===null)?(c.w||''):c.v;return String(v).trim();}
+function importCeiCellNum(ws,addr){const c=ws[addr];if(!c)return null;let v=c.v;if(typeof v==='number')return v;if(typeof v==='string'){const n=parseFloat(v.replace(',','.'));return isNaN(n)?null:n;}return null;}
+
+function extrairNomeUnidadeImportCei(ws){
+  let s=importCeiCellStr(ws,'A1');
+  s=s.replace(/^\s*unidade\s*:\s*/i,'');
+  s=s.replace(/\s+\d+\s*$/,'');
+  return s.trim().replace(/\s+/g,' ');
+}
+function extrairCnpjImportCei(ws){
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+  const maxR=Math.min(range.e.r,9);
+  for(let r=0;r<=maxR;r++){
+    for(let c=range.s.c;c<=range.e.c;c++){
+      const addr=XLSX.utils.encode_cell({r,c});
+      const v=importCeiCellStr(ws,addr);
+      if(v&&v.toUpperCase().includes('CNPJ')){
+        const digits=v.replace(/\D/g,'');
+        if(digits.length>=11)return digits;
+      }
+    }
+  }
+  return null;
+}
+function extrairItensImportCei(ws){
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+  const maxRow=range.e.r+1;
+  const blocks=[{mark:'A',item:'B',qtd:'C'},{mark:'F',item:'G',qtd:'H'}];
+  const itens=[];
+  for(let r=1;r<=maxRow;r++){
+    blocks.forEach(b=>{
+      const itemVal=importCeiCellStr(ws,b.item+r);
+      if(!itemVal||itemVal.toLowerCase()==='item')return;
+      const markVal=importCeiCellStr(ws,b.mark+r).toLowerCase();
+      if(markVal!=='x')return;
+      const qtd=importCeiCellNum(ws,b.qtd+r);
+      if(qtd===null||qtd<=0)return;
+      itens.push({nome:itemVal.toUpperCase().replace(/\s+/g,' ').trim(),qtd});
+    });
+  }
+  return itens;
+}
+function sugerirLojaImportCei(nomeUnidade,cnpj,lojasDisp){
+  const nomeNorm=normalizeNomeImportCei(nomeUnidade);
+  // Prioriza nome IDÊNTICO antes de cair pra "contém" — senão "CEI ALPHA BABY" (nome
+  // exato de uma loja) também bate por substring em "CEI ALPHA BABY II" (nome exato
+  // de outra loja), e as duas viram ambíguas mesmo quando uma delas é bate 100%.
+  const exatos=lojasDisp.filter(l=>normalizeNomeImportCei(l.nome)===nomeNorm&&nomeNorm);
+  const porNome=exatos.length?exatos:lojasDisp.filter(l=>{const ln=normalizeNomeImportCei(l.nome);return ln&&nomeNorm&&(ln.includes(nomeNorm)||nomeNorm.includes(ln));});
+  const porCnpj=cnpj?lojasDisp.filter(l=>normalizeCnpjImportCei(l.cnpj)===cnpj):[];
+  if(porNome.length===1&&porCnpj.length===1&&porNome[0].id===porCnpj[0].id)return{sugestaoId:porNome[0].id,status:'ok'};
+  if(porNome.length===1&&porCnpj.length===1&&porNome[0].id!==porCnpj[0].id)return{sugestaoId:porNome[0].id,status:'divergente'};
+  if(porNome.length===1)return{sugestaoId:porNome[0].id,status:'so_nome'};
+  if(porNome.length===0&&porCnpj.length===1)return{sugestaoId:porCnpj[0].id,status:'so_cnpj'};
+  return{sugestaoId:null,status:'ambiguo'};
+}
+const IMPORT_CEI_STATUS_INFO={
+  ok:{cls:'badge-comprado',txt:'✓ CNPJ e nome batem'},
+  so_nome:{cls:'badge-manager',txt:'Só o nome bateu'},
+  so_cnpj:{cls:'badge-pendente',txt:'⚠ Só o CNPJ bateu — confira'},
+  divergente:{cls:'badge-pendente',txt:'⚠ CNPJ aponta pra outra loja — confira'},
+  ambiguo:{cls:'badge-fiado',txt:'❗ Não identifiquei — selecione'}
+};
+
+async function processarImportCei(){
+  const fileInput=el('importCeiArquivo');
+  if(!fileInput.files||!fileInput.files[0]){showToast('Selecione um arquivo .xlsx primeiro.');return;}
+  const dataEscolhida=el('importCeiData').value;
+  if(!dataEscolhida){showToast('Escolha o dia em que esse pedido vai ser lançado.');return;}
+  importCei.dataEscolhida=dataEscolhida;
+  let wb;
+  try{
+    const buf=await fileInput.files[0].arrayBuffer();
+    wb=XLSX.read(buf,{type:'array'});
+  }catch(e){showToast('Não consegui ler esse arquivo — confirma que é um .xlsx válido.');return;}
+  importCei.workbook=wb;
+  const lojasDisp=lojas.slice();
+  importCei.sheets=wb.SheetNames.map(nomeAba=>{
+    const ws=wb.Sheets[nomeAba];
+    const nomeUnidade=extrairNomeUnidadeImportCei(ws);
+    const cnpj=extrairCnpjImportCei(ws);
+    const itens=extrairItensImportCei(ws);
+    const sug=sugerirLojaImportCei(nomeUnidade,cnpj,lojasDisp);
+    return{nomeAba,nomeUnidade,cnpj,itens,status:sug.status,lojaEscolhidaId:sug.sugestaoId};
+  });
+  renderImportCeiStep2();
+  el('importCeiStep1').style.display='none';
+  el('importCeiStep2').style.display='';
+}
+
+function importCeiSetLoja(idx,val){importCei.sheets[idx].lojaEscolhidaId=val?parseInt(val):null;renderImportCeiStep2();}
+
+function renderImportCeiStep2(){
+  const lojasDisp=lojas.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const idsEscolhidos={};
+  importCei.sheets.forEach(s=>{if(s.lojaEscolhidaId)idsEscolhidos[s.lojaEscolhidaId]=(idsEscolhidos[s.lojaEscolhidaId]||0)+1;});
+  let html='<table class="prod-table"><thead><tr><th>Aba</th><th>Unidade (na planilha)</th><th>Loja</th><th>Itens</th><th>Situação</th></tr></thead><tbody>';
+  importCei.sheets.forEach((s,idx)=>{
+    const info=IMPORT_CEI_STATUS_INFO[s.status];
+    const duplicada=s.lojaEscolhidaId&&idsEscolhidos[s.lojaEscolhidaId]>1;
+    html+=`<tr>
+      <td style="font-size:12px;">${s.nomeAba}</td>
+      <td style="font-size:12px;color:var(--text2);">${s.nomeUnidade||'—'}</td>
+      <td><select onchange="importCeiSetLoja(${idx},this.value)" style="font-size:12px;min-width:170px;">
+        <option value="">— selecionar —</option>
+        ${lojasDisp.map(l=>`<option value="${l.id}" ${s.lojaEscolhidaId===l.id?'selected':''}>${l.nome}</option>`).join('')}
+      </select></td>
+      <td style="font-size:12px;text-align:center;">${s.itens.length}</td>
+      <td>${badge(info.cls,info.txt)}${duplicada?'<br>'+badge('badge-fiado','duas abas na mesma loja'):''}</td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  el('importCeiStep2Tabela').innerHTML=html;
+}
+
+async function avancarImportCeiStep3(){
+  const abasComLoja=importCei.sheets.filter(s=>s.lojaEscolhidaId);
+  if(!abasComLoja.length){showToast('Nenhuma aba tem loja selecionada.');return;}
+  const idsLojas=abasComLoja.map(s=>s.lojaEscolhidaId);
+  if(new Set(idsLojas).size!==idsLojas.length){showToast('Duas abas estão apontando pra mesma loja — corrija antes de continuar.');return;}
+  showToast('Processando planilha…');
+  importCei.resultado={};
+  for(const s of abasComLoja){
+    const lojaId=s.lojaEscolhidaId;
+    const{data:catalogo}=await db.from('produtos').select('nome,categoria').eq('loja_id',lojaId).eq('ativo',true);
+    const catMap={};(catalogo||[]).forEach(p=>{catMap[normalizeNomeImportCei(p.nome)]={nome:p.nome,categoria:p.categoria};});
+    const{data:hist}=await db.from('itens_pedido').select('produto,data,qtd').eq('loja_id',lojaId).neq('data',importCei.dataEscolhida).order('data',{ascending:false}).limit(600);
+    const histPorProduto={};
+    (hist||[]).forEach(h=>{
+      const key=normalizeNomeImportCei(h.produto);
+      if(!histPorProduto[key])histPorProduto[key]=[];
+      const datasVistas=new Set(histPorProduto[key].map(x=>x.data));
+      if(datasVistas.size<3||datasVistas.has(h.data))histPorProduto[key].push({data:h.data,qtd:parseFloat(h.qtd)});
+    });
+    const{data:existentes}=await db.from('itens_pedido').select('id').eq('loja_id',lojaId).eq('data',importCei.dataEscolhida).limit(1);
+    const temColisao=!!(existentes&&existentes.length);
+    const itensResolvidos=s.itens.map(it=>{
+      const key=normalizeNomeImportCei(it.nome);
+      const cat=catMap[key];
+      const vals=(histPorProduto[key]||[]).map(x=>x.qtd).filter(v=>!isNaN(v));
+      let mediana=null,anomalia=false;
+      if(vals.length){
+        const ord=[...vals].sort((a,b)=>a-b);
+        mediana=ord.length%2?ord[(ord.length-1)/2]:(ord[ord.length/2-1]+ord[ord.length/2])/2;
+        if(mediana>0&&(it.qtd<mediana*0.4||it.qtd>mediana*2.5))anomalia=true;
+      }
+      return{nomeOriginal:it.nome,nomeCatalogo:cat?cat.nome:it.nome,categoria:cat?cat.categoria:'',desconhecido:!cat,qtd:it.qtd,mediana,anomalia,confirmada:!anomalia};
+    });
+    importCei.resultado[lojaId]={lojaId,nomeLoja:(lojas.find(l=>l.id===lojaId)||{}).nome||('Loja '+lojaId),nomeAba:s.nomeAba,temColisao,sobrescrever:false,itens:itensResolvidos};
+  }
+  renderImportCeiStep3();
+  el('importCeiStep2').style.display='none';
+  el('importCeiStep3').style.display='';
+}
+
+function importCeiSetCategoria(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].categoria=val;}
+function importCeiSetConfirmada(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].confirmada=val;}
+function importCeiSetSobrescrever(lojaId,val){importCei.resultado[lojaId].sobrescrever=val;renderImportCeiStep3();}
+
+function renderImportCeiStep3(){
+  const CATEGORIAS=['fruta','legume','verdura','temperos','outros_itens','feculentos'];
+  let html='';
+  Object.values(importCei.resultado).forEach(r=>{
+    const soma=r.itens.reduce((s,it)=>s+(parseFloat(it.qtd)||0),0);
+    html+=`<div class="card" style="margin-bottom:.75rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:.5rem;">
+        <div><b>${r.nomeLoja}</b> <span style="font-size:11px;color:var(--text3);">(${r.nomeAba})</span></div>
+        <div style="font-size:12px;color:var(--text2);">${r.itens.length} itens · soma ${soma}</div>
+      </div>`;
+    if(r.temColisao){
+      html+=`<div style="background:var(--amber-bg,#3a2a0c);color:var(--amber,#f0b429);border-radius:var(--radius-sm);padding:.5rem .625rem;font-size:12px;margin-bottom:.5rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <i class="ti ti-alert-triangle"></i> Já existe pedido dessa loja em ${formatBR(importCei.dataEscolhida)}.
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:600;">
+          <input type="checkbox" ${r.sobrescrever?'checked':''} onchange="importCeiSetSobrescrever(${r.lojaId},this.checked)"/> Substituir o pedido pendente existente
+        </label>
+      </div>`;
+    }
+    const linhasProblema=r.itens.filter(it=>it.anomalia||it.desconhecido);
+    if(linhasProblema.length){
+      html+='<table class="prod-table" style="margin-bottom:.25rem;"><thead><tr><th>Produto</th><th style="width:70px">Qtd</th><th>Situação</th></tr></thead><tbody>';
+      r.itens.forEach((it,idx)=>{
+        if(!it.anomalia&&!it.desconhecido)return;
+        html+=`<tr>
+          <td style="font-size:12px;">${it.nomeCatalogo}</td>
+          <td style="font-size:12px;">${it.qtd}</td>
+          <td style="font-size:12px;">`;
+        if(it.desconhecido){
+          html+=`${badge('badge-fiado','produto não cadastrado')} <select onchange="importCeiSetCategoria(${r.lojaId},${idx},this.value)" style="font-size:11px;margin-left:6px;">
+            <option value="">categoria…</option>
+            ${CATEGORIAS.map(c=>`<option value="${c}" ${it.categoria===c?'selected':''}>${c}</option>`).join('')}
+          </select>`;
+        }
+        if(it.anomalia){
+          html+=`${badge('badge-pendente',`fora do padrão (mediana ${it.mediana})`)} <label style="font-size:11px;margin-left:6px;cursor:pointer;"><input type="checkbox" ${it.confirmada?'checked':''} onchange="importCeiSetConfirmada(${r.lojaId},${idx},this.checked)"/> confirmar mesmo assim</label>`;
+        }
+        html+='</td></tr>';
+      });
+      html+='</tbody></table>';
+    }
+    html+='</div>';
+  });
+  el('importCeiStep3Corpo').innerHTML=html||'<p style="font-size:12px;color:var(--text3);">Nada pra mostrar.</p>';
+}
+
+async function confirmarImportCei(){
+  const resultados=Object.values(importCei.resultado);
+  const lojasParaImportar=resultados.filter(r=>!r.temColisao||r.sobrescrever);
+  if(!lojasParaImportar.length){showToast('Nada pra importar — todas as lojas estão com colisão de data não confirmada.');return;}
+  for(const r of lojasParaImportar){
+    if(r.itens.some(it=>it.anomalia&&!it.confirmada)){showToast('Ainda tem quantidade fora do padrão sem confirmação em '+r.nomeLoja+'.');return;}
+    if(r.itens.some(it=>it.desconhecido&&!it.categoria)){showToast('Ainda tem produto não cadastrado sem categoria escolhida em '+r.nomeLoja+'.');return;}
+  }
+  if(!confirm(`Confirma a importação pra ${lojasParaImportar.length} loja(s), data ${formatBR(importCei.dataEscolhida)}?`))return;
+  showToast('Importando…');
+  let totalInseridos=0,lojasOk=0;
+  for(const r of lojasParaImportar){
+    try{
+      if(r.temColisao&&r.sobrescrever){
+        await db.from('itens_pedido').delete().eq('loja_id',r.lojaId).eq('data',importCei.dataEscolhida).eq('status','pendente');
+      }
+      const linhas=r.itens.map(it=>({loja_id:r.lojaId,data:importCei.dataEscolhida,produto:it.nomeCatalogo,categoria:it.categoria||'outros_itens',qtd:Math.round(parseFloat(it.qtd)||0),tipo:'unidade',status:'pendente',fornecedor:null}));
+      if(!linhas.length)continue;
+      const{error}=await db.from('itens_pedido').insert(linhas);
+      if(error){showToast(traduzErro(error,'Erro ao importar '+r.nomeLoja+': '));continue;}
+      totalInseridos+=linhas.length;lojasOk++;
+    }catch(e){showToast(traduzErro(e,'Erro ao importar '+r.nomeLoja+': '));}
+  }
+  showToast(`Importação concluída: ${totalInseridos} itens em ${lojasOk} loja(s).`);
+  fecharImportCei();
+  if(lojasParaImportar.some(r=>r.lojaId===currentLojaId)){
+    try{await carregarDadosDaLoja();renderPedido();renderHistorico();renderPedidoTabela();updateSalvarLabel();}catch(e){}
+  }
 }
 function saveDraftFromDOM(){PRODUTOS[currentCatTab].forEach((p,i)=>{const inp=el('tq_'+i);if(inp)tabelaDraft[currentCatTab][p]=inp.value;const tt=el('tt_'+i);if(tt)tabelaDraftTipo[currentCatTab][p]=tt.value;const tu=el('tu_'+i);if(tu)tabelaDraftUnid[currentCatTab][p]=tu.value;const tf=el('tf_'+i);if(tf)tabelaDraftForn[currentCatTab][p]=tf.value;});}
 function filtrarTabela(q){
