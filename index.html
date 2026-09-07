@@ -554,6 +554,9 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
         </div>
         <div id="view-tabela" style="display:none;">
           <div class="cat-btn-bar" id="pedTabelaCatBtns" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"></div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+            <button class="btn-ghost btn-sm" onclick="repetirUltimoPedido()"><i class="ti ti-repeat"></i> Repetir último pedido</button>
+          </div>
           <!-- Pesquisa na tabela -->
           <div style="position:relative;margin-bottom:.625rem;">
             <i class="ti ti-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:15px;pointer-events:none;"></i>
@@ -3201,6 +3204,30 @@ function saveEditPedido(id,tabela){
 }
 
 /* ── TABELA ── */
+function repetirUltimoPedido(){
+  // Pedido da Ana Paula (gerente das CEI, 2026-09-07): as escolas quase sempre pedem
+  // as mesmas coisas de uma semana pra outra — só uma ou outra quantidade muda. Em vez
+  // de digitar tudo de novo, preenche a Tabela com o que foi pedido na rodada anterior
+  // dessa loja, deixando ela revisar/ajustar antes de salvar (não grava nada sozinho).
+  const datasComPedido=[...new Set(itensPedido.filter(p=>p.lojaId===currentLojaId).map(p=>p.data))].sort();
+  const anteriores=datasComPedido.filter(d=>d<currentDate);
+  if(!anteriores.length){showToast('Não achei nenhum pedido anterior dessa loja pra repetir.');return;}
+  const dataAnterior=anteriores[anteriores.length-1];
+  // Pega TODOS os status daquela rodada (pendente/comprado/não-comprado) — o que importa
+  // aqui é "o que costuma ser pedido", não o que ficou em aberto depois.
+  const itensAnteriores=itensPedido.filter(i=>i.lojaId===currentLojaId&&i.data===dataAnterior);
+  if(!itensAnteriores.length){showToast('Não achei nenhum pedido anterior dessa loja pra repetir.');return;}
+  if(!confirm(`Preencher a tabela com o pedido de ${formatBR(dataAnterior)} (${itensAnteriores.length} itens)?\n\nDá pra revisar e ajustar cada quantidade antes de salvar — nada é gravado agora.`))return;
+  saveDraftFromDOM(); // não perde o que já tinha sido digitado antes de sobrescrever
+  itensAnteriores.forEach(i=>{
+    if(!tabelaDraft[i.categoria])tabelaDraft[i.categoria]={};
+    tabelaDraft[i.categoria][i.produto]=Math.round(parseFloat(i.qtd)||0)||'';
+  });
+  persistDraftLocal();
+  try{renderTabelaGrid();}catch(e){}
+  updateSalvarLabel();
+  showToast(`Preenchido com o pedido de ${formatBR(dataAnterior)} — revise e clique em Salvar pedido.`);
+}
 function saveDraftFromDOM(){PRODUTOS[currentCatTab].forEach((p,i)=>{const inp=el('tq_'+i);if(inp)tabelaDraft[currentCatTab][p]=inp.value;const tt=el('tt_'+i);if(tt)tabelaDraftTipo[currentCatTab][p]=tt.value;const tu=el('tu_'+i);if(tu)tabelaDraftUnid[currentCatTab][p]=tu.value;const tf=el('tf_'+i);if(tf)tabelaDraftForn[currentCatTab][p]=tf.value;});}
 function filtrarTabela(q){
   // Filtra as linhas visíveis da tabela em tempo real sem re-renderizar tudo.
