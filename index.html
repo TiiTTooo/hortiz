@@ -1530,7 +1530,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <div id="importCeiStep3Corpo"></div>
       <div style="display:flex;gap:8px;margin-top:1rem;">
         <button class="btn-ghost" onclick="voltarImportCeiStep2()"><i class="ti ti-arrow-left"></i> Voltar</button>
-        <button class="btn-primary" style="flex:1;" onclick="confirmarImportCei()"><i class="ti ti-check"></i> Confirmar e importar</button>
+        <button class="btn-primary" id="importCeiBtnConfirmar" style="flex:1;" onclick="confirmarImportCei()"><i class="ti ti-check"></i> Confirmar e importar</button>
       </div>
     </div>
   </div>
@@ -3331,36 +3331,42 @@ async function baixarModeloImportCei(){
       if(!categorias.length)continue; // loja sem catálogo cadastrado ainda — não dá pra gerar modelo
       const colEsq=[],colDir=[];
       categorias.forEach((cat,i)=>(i%2===0?colEsq:colDir).push(cat));
+      // Layout simplificado (pedido do Tito, 2026-09-07): sem coluna de "x" pra marcar —
+      // só Item + Quant direto. Basta preencher a quantidade; item sem quantidade é
+      // ignorado na importação. Sem linha de endereço também (não serve pra nada no
+      // casamento aba→loja, só poluía). "Unidade:" e "CNPJ:" continuam — são os dois
+      // sinais que o importador usa pra identificar a loja automaticamente.
       const aoa=[];
       const setCell=(r,c,v)=>{if(!aoa[r])aoa[r]=[];aoa[r][c]=v;};
       setCell(0,0,`Unidade: ${l.nome}`);
-      setCell(1,0,`Endereço:${l.endereco||''}`);
-      setCell(1,5,`CNPJ:${l.cnpj||''}`);
-      setCell(4,0,'Data do pedido: ');
-      let rowEsq=6,rowDir=6;
+      setCell(0,3,`CNPJ:${l.cnpj||''}`);
+      setCell(3,0,'Data do pedido: ');
+      let rowEsq=5,rowDir=5;
       colEsq.forEach(cat=>{
         setCell(rowEsq,0,IMPORT_CEI_LABEL_CATEGORIA[cat]||cat);rowEsq++;
-        setCell(rowEsq,0,'x');setCell(rowEsq,1,'Item');setCell(rowEsq,2,'Quant');rowEsq++;
-        porCategoria[cat].forEach(nome=>{setCell(rowEsq,1,nome);rowEsq++;});
+        setCell(rowEsq,0,'Item');setCell(rowEsq,1,'Quant');rowEsq++;
+        porCategoria[cat].forEach(nome=>{setCell(rowEsq,0,nome);rowEsq++;});
         rowEsq++;
       });
       colDir.forEach(cat=>{
-        setCell(rowDir,5,IMPORT_CEI_LABEL_CATEGORIA[cat]||cat);rowDir++;
-        setCell(rowDir,5,'x');setCell(rowDir,6,'Item');setCell(rowDir,7,'Quant');rowDir++;
-        porCategoria[cat].forEach(nome=>{setCell(rowDir,6,nome);rowDir++;});
+        setCell(rowDir,3,IMPORT_CEI_LABEL_CATEGORIA[cat]||cat);rowDir++;
+        setCell(rowDir,3,'Item');setCell(rowDir,4,'Quant');rowDir++;
+        porCategoria[cat].forEach(nome=>{setCell(rowDir,3,nome);rowDir++;});
         rowDir++;
       });
       const ws=XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols']=[{wch:3},{wch:22},{wch:8},{wch:2},{wch:2},{wch:3},{wch:22},{wch:8}];
-      let base=(l.nome||'Loja').replace(/[\\/*?:\[\]]/g,' ').trim().substring(0,31)||'Loja';
-      let sheetName=base,n=1;
-      while(nomesUsados[sheetName]){sheetName=(base.substring(0,28)+'_'+n).substring(0,31);n++;}
+      ws['!cols']=[{wch:24},{wch:8},{wch:2},{wch:24},{wch:8}];
+      // A aba (guia) fica genérica "Loja 1", "Loja 2"... só pra navegação — o nome real
+      // continua na célula "Unidade:" dentro da planilha, que é o que o importador lê
+      // pra casar automaticamente com a loja certa ao subir de volta.
+      let sheetName='Loja '+(wb.SheetNames.length+1),n=1;
+      while(nomesUsados[sheetName]){n++;sheetName='Loja '+(wb.SheetNames.length+1)+'_'+n;}
       nomesUsados[sheetName]=true;
       XLSX.utils.book_append_sheet(wb,ws,sheetName);
     }
     if(!wb.SheetNames.length){showToast('Nenhuma loja tem produtos cadastrados ainda — cadastre o catálogo antes de gerar o modelo.');return;}
     XLSX.writeFile(wb,`modelo-pedido-${new Date().toISOString().slice(0,10)}.xlsx`);
-    showToast('Modelo baixado — marque "x" e a quantidade de cada item, e suba de volta aqui.');
+    showToast('Modelo baixado — preencha a quantidade de cada item e suba de volta aqui.');
   }catch(e){showToast(traduzErro(e,'Erro ao gerar modelo: '));}
 }
 
@@ -3404,14 +3410,26 @@ function extrairCnpjImportCei(ws){
 function extrairItensImportCei(ws){
   const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
   const maxRow=range.e.r+1;
-  const blocks=[{mark:'A',item:'B',qtd:'C'},{mark:'F',item:'G',qtd:'H'}];
+  // Dois formatos suportados ao mesmo tempo, sem precisar detectar qual é qual:
+  // o formato "legado" das planilhas que as escolas CEI já mandam preenchidas (colunas
+  // A/F marcam "x", item em B/G, quantidade em C/H) E o modelo simplificado que o
+  // próprio sistema agora gera pra baixar (sem coluna de "x" — item em A/D, quantidade
+  // em B/E). Rodar os dois conjuntos de coluna em toda linha é seguro: numa planilha
+  // legado, as colunas A/D do formato novo só têm 'x' ou nada (não é um número válido
+  // na coluna de quantidade correspondente), então não geram item fantasma — e vice-versa.
+  const blocks=[
+    {mark:'A',item:'B',qtd:'C'},{mark:'F',item:'G',qtd:'H'}, // legado (com "x")
+    {mark:null,item:'A',qtd:'B'},{mark:null,item:'D',qtd:'E'}, // modelo novo (sem "x")
+  ];
   const itens=[];
   for(let r=1;r<=maxRow;r++){
     blocks.forEach(b=>{
       const itemVal=importCeiCellStr(ws,b.item+r);
       if(!itemVal||itemVal.toLowerCase()==='item')return;
-      const markVal=importCeiCellStr(ws,b.mark+r).toLowerCase();
-      if(markVal!=='x')return;
+      if(b.mark){
+        const markVal=importCeiCellStr(ws,b.mark+r).toLowerCase();
+        if(markVal!=='x')return;
+      }
       const qtd=importCeiCellNum(ws,b.qtd+r);
       if(qtd===null||qtd<=0)return;
       itens.push({nome:itemVal.toUpperCase().replace(/\s+/g,' ').trim(),qtd});
@@ -3532,9 +3550,39 @@ async function avancarImportCeiStep3(){
   el('importCeiStep3').style.display='';
 }
 
-function importCeiSetCategoria(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].categoria=val;}
-function importCeiSetConfirmada(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].confirmada=val;}
+function importCeiSetCategoria(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].categoria=val;atualizarBloqueioImportCei();}
+function importCeiSetConfirmada(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].confirmada=val;atualizarBloqueioImportCei();}
 function importCeiSetSobrescrever(lojaId,val){importCei.resultado[lojaId].sobrescrever=val;renderImportCeiStep3();}
+// Corrigir a quantidade direto na tela de revisão (pedido do Tito, 2026-09-07, depois de
+// ver o caso real da Beringela=67/mediana 8 de novo em teste): reavalia contra a mediana
+// já calculada — se a correção cair dentro do padrão, o item sai da lista de problemas
+// sozinho; se continuar fora, exige confirmação de novo (o valor mudou, a confirmação
+// anterior não vale mais pro novo número).
+function importCeiSetQtd(lojaId,idx,val){
+  const it=importCei.resultado[lojaId].itens[idx];
+  const novoQtd=Math.max(0,Math.round(parseFloat(String(val).replace(',','.'))||0));
+  it.qtd=novoQtd;
+  if(it.mediana&&it.mediana>0){
+    it.anomalia=(novoQtd<it.mediana*0.4||novoQtd>it.mediana*2.5);
+  } else {
+    it.anomalia=false;
+  }
+  it.confirmada=!it.anomalia;
+  renderImportCeiStep3();
+}
+// Bloqueador: enquanto tiver anomalia sem confirmar ou produto não cadastrado sem
+// categoria em alguma loja que vai entrar na importação, o botão de confirmar fica
+// desabilitado — não dá pra avançar sem resolver ou confirmar cada um explicitamente.
+function atualizarBloqueioImportCei(){
+  const btn=el('importCeiBtnConfirmar');
+  if(!btn)return;
+  const lojasParaImportar=Object.values(importCei.resultado).filter(r=>!r.temColisao||r.sobrescrever);
+  const pendente=lojasParaImportar.some(r=>r.itens.some(it=>(it.anomalia&&!it.confirmada)||(it.desconhecido&&!it.categoria)));
+  btn.disabled=pendente||!lojasParaImportar.length;
+  btn.style.opacity=btn.disabled?'.5':'';
+  btn.style.cursor=btn.disabled?'not-allowed':'';
+  btn.title=pendente?'Resolva ou confirme todos os itens fora do padrão / não cadastrados antes de continuar':'';
+}
 
 function renderImportCeiStep3(){
   const CATEGORIAS=['fruta','legume','verdura','temperos','outros_itens','feculentos'];
@@ -3556,12 +3604,18 @@ function renderImportCeiStep3(){
     }
     const linhasProblema=r.itens.filter(it=>it.anomalia||it.desconhecido);
     if(linhasProblema.length){
-      html+='<table class="prod-table" style="margin-bottom:.25rem;"><thead><tr><th>Produto</th><th style="width:70px">Qtd</th><th>Situação</th></tr></thead><tbody>';
+      html+='<table class="prod-table" style="margin-bottom:.25rem;"><thead><tr><th>Produto</th><th style="width:90px">Qtd</th><th>Situação</th></tr></thead><tbody>';
       r.itens.forEach((it,idx)=>{
         if(!it.anomalia&&!it.desconhecido)return;
         html+=`<tr>
           <td style="font-size:12px;">${it.nomeCatalogo}</td>
-          <td style="font-size:12px;">${it.qtd}</td>
+          <td style="font-size:12px;">`;
+        if(it.anomalia){
+          html+=`<input type="number" min="0" step="1" value="${it.qtd}" style="width:70px;font-size:12px;" onchange="importCeiSetQtd(${r.lojaId},${idx},this.value)"/>`;
+        } else {
+          html+=`${it.qtd}`;
+        }
+        html+=`</td>
           <td style="font-size:12px;">`;
         if(it.desconhecido){
           html+=`${badge('badge-fiado','produto não cadastrado')} <select onchange="importCeiSetCategoria(${r.lojaId},${idx},this.value)" style="font-size:11px;margin-left:6px;">
@@ -3570,7 +3624,7 @@ function renderImportCeiStep3(){
           </select>`;
         }
         if(it.anomalia){
-          html+=`${badge('badge-pendente',`fora do padrão (mediana ${it.mediana})`)} <label style="font-size:11px;margin-left:6px;cursor:pointer;"><input type="checkbox" ${it.confirmada?'checked':''} onchange="importCeiSetConfirmada(${r.lojaId},${idx},this.checked)"/> confirmar mesmo assim</label>`;
+          html+=`${badge('badge-pendente',`fora do padrão (mediana ${it.mediana})`)} <label style="font-size:11px;margin-left:6px;cursor:pointer;"><input type="checkbox" ${it.confirmada?'checked':''} onchange="importCeiSetConfirmada(${r.lojaId},${idx},this.checked)"/> confirmo que ${it.qtd} está certo</label>`;
         }
         html+='</td></tr>';
       });
@@ -3579,6 +3633,7 @@ function renderImportCeiStep3(){
     html+='</div>';
   });
   el('importCeiStep3Corpo').innerHTML=html||'<p style="font-size:12px;color:var(--text3);">Nada pra mostrar.</p>';
+  atualizarBloqueioImportCei();
 }
 
 async function confirmarImportCei(){
