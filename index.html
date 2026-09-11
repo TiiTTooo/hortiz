@@ -588,10 +588,21 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- PREÇO CLIENTE (só supervisor(a) — versão enxuta da aba Custo/Preço, sem custo nem margem) -->
       <section id="tab-precofinal" style="display:none;">
         <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Preço de venda por produto, já com a margem aplicada. Use na hora de fazer o pedido.</p>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
+        <div style="display:flex;gap:8px;margin-bottom:.5rem;">
+          <select id="precoFinalPeriodoTipo" onchange="onPrecoFinalPeriodoTipoChange()" style="flex:none;width:auto;">
+            <option value="mes">Por mês</option>
+            <option value="semana">Por semana</option>
+          </select>
+        </div>
+        <div id="precoFinalMesWrap" style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
           <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
-          <input type="month" id="precoFinalMesFiltro" onchange="onPrecoFinalMesChange()" style="flex:1;text-align:center;"/>
+          <input type="month" id="precoFinalMesFiltro" onchange="onPrecoFinalPeriodoChange()" style="flex:1;text-align:center;"/>
           <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(1)" title="Próximo mês" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+        </div>
+        <div id="precoFinalSemanaWrap" style="display:none;align-items:center;gap:8px;margin-bottom:.75rem;">
+          <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(-1)" title="Semana anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
+          <input type="week" id="precoFinalSemanaFiltro" onchange="onPrecoFinalPeriodoChange()" style="flex:1;text-align:center;"/>
+          <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(1)" title="Próxima semana" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
         </div>
         <div class="field-row" style="margin-bottom:.75rem;">
           <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
@@ -7561,7 +7572,7 @@ async function carregarDadosDaLoja(){
     // currentDate — mesmo padrão usado por mapaPrecoFinalPorProduto() pro dono/gerente.
     if(currentUser&&currentUser.role==='supervisor'){
       const mesInicial=(el('precoFinalMesFiltro')&&el('precoFinalMesFiltro').value)||currentDate.substring(0,7);
-      await carregarPrecoFinalRPC(mesInicial);
+      await carregarPrecoFinalRPC({tipo:'mes',mes:mesInicial});
     }else{
       precoFinalRPC={};
     }
@@ -7860,7 +7871,11 @@ function precosMesMudar(delta){
 // 3 notas não pesa mais que um dia com 1), depois tira a média entre esses
 // dias. Produto sem nenhuma compra no mês simplesmente não entra no mapa —
 // quem chama decide como mostrar "sem compra".
-function custoMedioMensalPorProduto(mesSel){
+// Extraído de custoMedioMensalPorProduto() pra reaproveitar a MESMA regra de média
+// (por dia comprado, depois média entre os dias) num intervalo de datas qualquer —
+// usado pra suportar a opção "por semana" no Preço por Produto (pedido do Tito,
+// 2026-09-11), sem duplicar a lógica nem mexer no comportamento por mês já existente.
+function custoMedioPorProdutoEmPeriodo(dataDe,dataAte){
   const porProduto={};
   const addRegistro=(produto,categoria,data,valorUnit,valorCx,temUnid)=>{
     if(!porProduto[produto]) porProduto[produto]={categoria,porDia:{}};
@@ -7868,10 +7883,10 @@ function custoMedioMensalPorProduto(mesSel){
     porProduto[produto].porDia[data].push({valorUnit,valorCx,temUnid});
   };
   compras
-    .filter(c=>c.lojaId===currentLojaId&&c.data&&c.data.slice(0,7)===mesSel)
+    .filter(c=>c.lojaId===currentLojaId&&c.data&&c.data>=dataDe&&c.data<=dataAte)
     .forEach(c=>addRegistro(c.produto,c.categoria,c.data,(c.custoUnitario||c.valorUnit),c.valorUnit,!!c.unidPorCaixa));
   priceHistory
-    .filter(h=>h.lojaId===currentLojaId&&h.data&&h.data.slice(0,7)===mesSel)
+    .filter(h=>h.lojaId===currentLojaId&&h.data&&h.data>=dataDe&&h.data<=dataAte)
     .forEach(h=>{
       const vUnit=h.custoUnitario||h.valor;
       // evita duplicar o que já veio de "compras" (mesmo produto/dia/valor)
@@ -7891,6 +7906,12 @@ function custoMedioMensalPorProduto(mesSel){
     mapa[prod]={categoria:d.categoria,media,mediaCx,temUnid,diasComprados:dias.length};
   });
   return mapa;
+}
+function custoMedioMensalPorProduto(mesSel){
+  const [y,m]=mesSel.split('-').map(Number);
+  const dataDe=mesSel+'-01';
+  const dataAte=mesSel+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
+  return custoMedioPorProdutoEmPeriodo(dataDe,dataAte);
 }
 function renderPrecosMedia(){
   garantirMesPrecoPadrao();
@@ -8023,23 +8044,24 @@ function renderPrecosMedia(){
 // (custo médio do histórico de compras dessa loja x margem). Reaproveitado pela
 // tabela de "Preço por Produto" (renderPrecoFinal) e pelo relatório de valores finais
 // da Supervisor(a) (calcRelFinalTotals), pra não duplicar a mesma conta em dois lugares.
-function mapaPrecoFinalPorProduto(mesSel){
+function mapaPrecoFinalPorProduto(periodo){
   // Supervisor(a) não tem mais leitura direta de margem_global/margens_custom
   // no banco (RLS restrita a 'manager' desde 2026-08-25) — pra ela, o preço
   // final vem pronto do banco via RPC (ver carregarPrecoFinalRPC), já calculado
-  // pro mês escolhido, sem nunca expor custo nem % de margem pro navegador dela.
+  // pro período escolhido, sem nunca expor custo nem % de margem pro navegador dela.
   if(currentUser&&currentUser.role==='supervisor'){
     return precoFinalRPC;
   }
-  // Custo médio do mês pedido (mesma regra de renderPrecosMedia(): média por dia
-  // comprado, não por nota nem por dia do mês inteiro). Sem mês explícito, cai no
-  // mês de currentDate — mantém compatível com calcRelFinalTotals(), que sempre
-  // quer o mês corrente do relatório. Produto sem compra nesse mês não entra no mapa.
-  const mesRef=mesSel||currentDate.substring(0,7);
-  const mediaMap=custoMedioMensalPorProduto(mesRef);
+  // `periodo` pode ser {tipo:'semana',de,ate} ou {tipo:'mes',mes:'YYYY-MM'}. Sem
+  // periodo (ex.: calcRelFinalTotals(), que sempre quer o mês corrente do relatório),
+  // cai no mês de currentDate — mesma regra de sempre. Produto sem compra no
+  // período não entra no mapa.
+  const mediaMap = (periodo&&periodo.tipo==='semana')
+    ? custoMedioPorProdutoEmPeriodo(periodo.de,periodo.ate)
+    : custoMedioMensalPorProduto((periodo&&periodo.mes)||currentDate.substring(0,7));
 
   // Quantidade total já comprada de cada produto (soma de TODAS as compras
-  // já registradas dessa loja, sem filtro de mês) — informação extra pra
+  // já registradas dessa loja, sem filtro de período) — informação extra pra
   // tabela de Preço por Produto, separada do cálculo de custo médio.
   const qtdPorProduto={};
   compras.filter(c=>c.lojaId===currentLojaId).forEach(c=>{
@@ -8062,25 +8084,81 @@ function garantirMesPrecoFinalPadrao(){
     elMes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
   }
 }
+// Semana ISO-8601 (segunda a domingo) de uma data qualquer, no formato do
+// <input type="week"> ('YYYY-Www') — regra padrão: semana 1 é a que contém a
+// primeira quinta-feira do ano.
+function isoWeekDeData(date){
+  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+  const diaIso=(d.getUTCDay()+6)%7; // 0=segunda...6=domingo
+  d.setUTCDate(d.getUTCDate()-diaIso+3); // quinta-feira dessa semana
+  const primeiraQuinta=new Date(Date.UTC(d.getUTCFullYear(),0,4));
+  const diasDif=Math.round((d-primeiraQuinta)/86400000);
+  const semana=1+Math.round(diasDif/7);
+  return d.getUTCFullYear()+'-W'+String(semana).padStart(2,'0');
+}
+function isoWeekAtual(){return isoWeekDeData(new Date());}
+// Converte o valor de um <input type="week"> ('YYYY-Www') no intervalo de datas
+// segunda→domingo correspondente ('YYYY-MM-DD').
+function semanaParaIntervalo(valor){
+  const[anoStr,wStr]=valor.split('-W');
+  const ano=parseInt(anoStr,10),semana=parseInt(wStr,10);
+  const jan4=new Date(ano,0,4);
+  const diaIsoJan4=(jan4.getDay()+6)%7;
+  const segSemana1=new Date(jan4);
+  segSemana1.setDate(jan4.getDate()-diaIsoJan4);
+  const seg=new Date(segSemana1);
+  seg.setDate(segSemana1.getDate()+(semana-1)*7);
+  const dom=new Date(seg);
+  dom.setDate(seg.getDate()+6);
+  const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return{de:fmt(seg),ate:fmt(dom)};
+}
+function garantirSemanaPrecoFinalPadrao(){
+  const elSem=el('precoFinalSemanaFiltro');
+  if(elSem&&!elSem.value)elSem.value=isoWeekAtual();
+}
+// Monta o descritor de período ({tipo:'mes',mes} ou {tipo:'semana',de,ate}) a partir
+// do que estiver selecionado agora nos controles da aba "Preço por Produto".
+function obterPeriodoPrecoFinal(){
+  const tipo=el('precoFinalPeriodoTipo')?el('precoFinalPeriodoTipo').value:'mes';
+  if(tipo==='semana'){
+    garantirSemanaPrecoFinalPadrao();
+    const{de,ate}=semanaParaIntervalo(el('precoFinalSemanaFiltro').value);
+    return{tipo:'semana',de,ate};
+  }
+  garantirMesPrecoFinalPadrao();
+  return{tipo:'mes',mes:el('precoFinalMesFiltro').value};
+}
 // Supervisor(a) não calcula o preço final no navegador (RLS bloqueia leitura de
-// custo/margem pra ela) — precisa buscar de novo no banco toda vez que o mês
+// custo/margem pra ela) — precisa buscar de novo no banco toda vez que o período
 // escolhido mudar. Dono/gerente calculam local (mapaPrecoFinalPorProduto já
-// recebe o mês direto), então não passam por aqui.
-async function carregarPrecoFinalRPC(mesSel){
+// recebe o período direto), então não passam por aqui.
+async function carregarPrecoFinalRPC(periodo){
   precoFinalRPC={};
   try{
-    const{data:pfData,error:pfErr}=await db.rpc('preco_final_por_produto',{p_loja_id:currentLojaId,p_ano_mes:mesSel});
+    const params={p_loja_id:currentLojaId};
+    if(periodo&&periodo.tipo==='semana'){params.p_data_de=periodo.de;params.p_data_ate=periodo.ate;}
+    else{params.p_ano_mes=(periodo&&periodo.mes)||currentDate.substring(0,7);}
+    const{data:pfData,error:pfErr}=await db.rpc('preco_final_por_produto',params);
     if(!pfErr&&pfData){
       pfData.forEach(r=>{precoFinalRPC[r.produto]={categoria:r.categoria,precoFinal:parseFloat(r.preco_final),qtdComprada:parseFloat(r.qtd_comprada)};});
     }
   }catch(e){}
 }
-async function onPrecoFinalMesChange(){
+async function onPrecoFinalPeriodoChange(){
+  const periodo=obterPeriodoPrecoFinal();
   if(currentUser&&currentUser.role==='supervisor'){
-    showToast('Atualizando preço do mês…');
-    await carregarPrecoFinalRPC(el('precoFinalMesFiltro').value);
+    showToast('Atualizando preço do período…');
+    await carregarPrecoFinalRPC(periodo);
   }
   renderPrecoFinal();
+}
+function onPrecoFinalPeriodoTipoChange(){
+  const tipo=el('precoFinalPeriodoTipo').value;
+  const wrapMes=el('precoFinalMesWrap'),wrapSemana=el('precoFinalSemanaWrap');
+  if(wrapMes)wrapMes.style.display=tipo==='mes'?'flex':'none';
+  if(wrapSemana)wrapSemana.style.display=tipo==='semana'?'flex':'none';
+  onPrecoFinalPeriodoChange();
 }
 async function precoFinalMesMudar(delta){
   garantirMesPrecoFinalPadrao();
@@ -8088,15 +8166,23 @@ async function precoFinalMesMudar(delta){
   const[y,m]=elMes.value.split('-').map(Number);
   const dt=new Date(y,m-1+delta,1);
   elMes.value=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
-  await onPrecoFinalMesChange();
+  await onPrecoFinalPeriodoChange();
+}
+async function precoFinalSemanaMudar(delta){
+  garantirSemanaPrecoFinalPadrao();
+  const elSem=el('precoFinalSemanaFiltro');
+  const{de}=semanaParaIntervalo(elSem.value);
+  const[y,m,dd]=de.split('-').map(Number);
+  const novaSegunda=new Date(y,m-1,dd+delta*7);
+  elSem.value=isoWeekDeData(novaSegunda);
+  await onPrecoFinalPeriodoChange();
 }
 function renderPrecoFinal(){
-  garantirMesPrecoFinalPadrao();
+  const periodo=obterPeriodoPrecoFinal();
   const catF      = el('precoFinalCatFilter')?el('precoFinalCatFilter').value:'';
   const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
-  const mesSel    = el('precoFinalMesFiltro')?el('precoFinalMesFiltro').value:currentDate.substring(0,7);
 
-  const mapa=mapaPrecoFinalPorProduto(mesSel);
+  const mapa=mapaPrecoFinalPorProduto(periodo);
   let rows=Object.keys(mapa).map(prod=>({produto:prod,categoria:mapa[prod].categoria,precoFinal:mapa[prod].precoFinal,qtdComprada:mapa[prod].qtdComprada}));
 
   if(catF)       rows=rows.filter(r=>r.categoria===catF);
