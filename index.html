@@ -588,6 +588,11 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- PREÇO CLIENTE (só supervisor(a) — versão enxuta da aba Custo/Preço, sem custo nem margem) -->
       <section id="tab-precofinal" style="display:none;">
         <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Preço de venda por produto, já com a margem aplicada. Use na hora de fazer o pedido.</p>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
+          <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
+          <input type="month" id="precoFinalMesFiltro" onchange="onPrecoFinalMesChange()" style="flex:1;text-align:center;"/>
+          <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(1)" title="Próximo mês" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+        </div>
         <div class="field-row" style="margin-bottom:.75rem;">
           <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
           <input id="precoFinalProdFiltro" placeholder="Buscar produto…" oninput="renderPrecoFinal()"/>
@@ -3010,9 +3015,25 @@ function atualizarAvisoData(){
 // mas "Salvar pedido" passava a gravar tudo na data NOVA — o pedido não sumia de
 // verdade, ficava salvo num dia diferente do que a pessoa achava que estava editando.
 // Esta função garante que a grade sempre reflita a `currentDate` atual.
+// Zera o rascunho em memória de TODOS os produtos antes de trocar de data. Achado em
+// 10/09/2026 investigando "produto duplicando e ficando fixo em todo dia" (Tito):
+// `tabelaDraft`/Tipo/Unid/Forn são objetos GLOBAIS (não indexados por data), e
+// `restaurarDraftLocal()` só faz merge do que tem no localStorage pra data atual —
+// nunca limpa o que já estava em memória de uma data anterior. Resultado: trocar de
+// data (setinhas, campo de data, histórico) sem recarregar a página inteira deixava
+// o número digitado num dia "grudado" em memória e reaparecendo em QUALQUER outro dia
+// que a pessoa abrisse depois — e clicar Salvar ali criava um pedido novo errado
+// nesse outro dia (mesma raiz do bug já documentado no comentário de
+// atualizarTabelaSeVisivel logo abaixo, só que a correção de então só cobriu o
+// RE-RENDER, não a limpeza do rascunho em si).
+function limparDraftsTabela(){
+  Object.keys(PRODUTOS||{}).forEach(cat=>{
+    tabelaDraft[cat]={};tabelaDraftTipo[cat]={};tabelaDraftUnid[cat]={};tabelaDraftForn[cat]={};
+  });
+}
 function atualizarTabelaSeVisivel(){
   const tabelaVisivel=el('view-tabela')&&el('view-tabela').style.display!=='none';
-  if(tabelaVisivel){restaurarDraftLocal();renderTabelaGrid();updateSalvarLabel();}
+  if(tabelaVisivel){limparDraftsTabela();restaurarDraftLocal();renderTabelaGrid();updateSalvarLabel();}
 }
 function voltarParaHoje(){
   const hoje=todayStr();
@@ -3161,14 +3182,27 @@ function itemResolvidoHojePorProduto(categoria,produto){
   );
 }
 function adicionarOuSomarPedido({produto,categoria,qtd,tipo,unidPorCaixa,fornecedor}){
-  // Usado pelo fluxo "item por item" (view-lista) — aqui faz sentido continuar somando:
-  // cada "Adicionar ao pedido" é uma ação explícita de adicionar mais uma quantidade.
+  // Usado pelo fluxo "item por item" (view-lista) e por salvarTabela() (view-tabela) —
+  // aqui faz sentido continuar somando quando já existe pendente: cada "Adicionar ao
+  // pedido"/ajuste de quantidade é uma ação explícita de somar mais.
   const existente=itemPedidoExistente(categoria,produto,tipo,unidPorCaixa);
   if(existente){
     existente.qtd=(parseFloat(existente.qtd)||0)+qtd;
     if(fornecedor!==undefined)existente.fornecedor=fornecedor;
     syncPedidoUpdate(existente);
     return existente;
+  }
+  // Produto sem pendente, mas já resolvido (comprado/não comprado) HOJE — mesmo padrão
+  // de bug real das lojas 36/38/40/41 (ver fix-duplicacao-produto-quase-igual-2026-08-26.md):
+  // o fix de 26/08 colocou essa trava só dentro de salvarTabela() (view-tabela). Quem usa
+  // o fluxo "item por item" (addPedido/view-lista) continuou sem NENHUMA proteção — cliente
+  // reportou de novo em 09/09 (loja 40, "Acerola" duplicada em ~2min, mesma qtd, os dois já
+  // 'comprado'), batendo exatamente com esse buraco. Centralizando a trava aqui dentro,
+  // assim os dois fluxos (e qualquer um novo que chamar essa função) ficam cobertos.
+  const resolvidoHoje=itemResolvidoHojePorProduto(categoria,produto);
+  if(resolvidoHoje&&typeof confirm==='function'){
+    const acao=resolvidoHoje.status==='comprado'?'já foi marcado como COMPRADO':'já foi marcado como NÃO comprado';
+    if(!confirm(`"${produto}" ${acao} hoje (${resolvidoHoje.qtd} ${tipoAbrev(resolvidoHoje.tipo)}). Tem certeza que quer lançar mais ${qtd} como um pedido novo?\n\nSe já comprou isso hoje, provavelmente não precisa pedir de novo.`))return null;
   }
   const novoItem={id:nextId++,data:currentDate,produto,categoria,qtd,tipo,unidPorCaixa,fornecedor:fornecedor||null,status:'pendente',lojaId:currentLojaId};
   itensPedido.push(novoItem);
@@ -3715,21 +3749,23 @@ function renderTabelaGrid(){
       const du=tabelaDraftUnid[cat][p]||(existente?(existente.unidPorCaixa||''):(padrao.unidPorCaixa||''));
       const df=tabelaDraftForn[cat][p]!==undefined?tabelaDraftForn[cat][p]:(existente?(existente.fornecedor||''):'');
       const jaPedido=existente?(parseFloat(existente.qtd)||0):0;
-      // A caixinha sempre mostra o total pendente de verdade (não um rascunho que some
-      // depois de salvar) — editar e salvar SUBSTITUI esse total, não soma em cima dele.
-      // tabelaDraft só entra quando o campo já foi digitado nessa sessão (inclusive pra
-      // permitir zerar/apagar).
-      const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:(jaPedido>0?jaPedido:'');
-      const hasQ=parseFloat(d)>0;
+      // Pedido do Tito (10/09/2026): a caixinha não fica mais pré-preenchida com o
+      // total já pedido — só mostra o que foi digitado NESSA sessão (tabelaDraft).
+      // Depois de salvar (ou trocar de dia) o rascunho é limpo e a caixinha volta a
+      // ficar vazia; o que já está pedido aparece do lado do nome, entre parênteses.
+      // Editar e salvar continua SUBSTITUINDO o total (não soma em cima dele).
+      const d=tabelaDraft[cat][p]!==undefined?tabelaDraft[cat][p]:'';
+      const digitando=parseFloat(d)>0;
+      const hasQ=digitando||jaPedido>0;
       const aberto=tabelaFornAbertos.has(cat+'|'+p);
-      // Só avisa "já resolvido hoje" quando a caixinha tá vazia — se já tem pendente
-      // (jaPedido>0) o normal é editar/aumentar em cima dele, não é o caso confuso.
-      const resolvidoHoje=(!hasQ)?itemResolvidoHojePorProduto(cat,p):null;
+      // Só avisa "já resolvido hoje" quando a caixinha tá vazia (nada sendo digitado
+      // agora) — enquanto a pessoa digita um valor novo pra relançar, some o aviso.
+      const resolvidoHoje=(!digitando)?itemResolvidoHojePorProduto(cat,p):null;
       return`<tr class="${hasQ?'has-qty':''}">
         <td style="font-size:13px;cursor:pointer;" onclick="toggleTabelaForn('${cat}','${esc(escJs(p))}')">
           <div style="display:flex;align-items:center;gap:6px;">
             <i class="ti ti-chevron-${aberto?'down':'right'}" style="font-size:12px;flex-shrink:0;color:var(--text3);"></i>
-            <span>${p}</span>
+            <span>${p}${jaPedido>0?` <span style="color:var(--accent);font-weight:700;">( ${jaPedido.toLocaleString('pt-BR',{maximumFractionDigits:2})} )</span>`:''}</span>
             ${df?`<i class="ti ti-truck" style="font-size:12px;flex-shrink:0;color:var(--accent);" title="Fornecedor: ${esc(df)}"></i>`:''}
             ${resolvidoHoje?`<i class="ti ti-${resolvidoHoje.status==='comprado'?'check':'ban'}" style="font-size:12px;flex-shrink:0;color:${resolvidoHoje.status==='comprado'?'var(--success,#30a46c)':'var(--text3)'};" title="${resolvidoHoje.status==='comprado'?'Já comprado hoje':'Marcado como não comprado hoje'}: ${resolvidoHoje.qtd}"></i>`:''}
           </div>
@@ -3780,10 +3816,11 @@ function updateUnidCell(i,cat,p){
   else{unidInp.style.opacity='1';unidInp.style.pointerEvents='';}
 }
 function updateSalvarLabel(){
-  // Conta só o que realmente mudou (difere do que já tá salvo como pendente) — como a
-  // caixinha agora fica preenchida com o total já pedido (não volta a ficar em branco
-  // depois de salvar), contar toda célula com valor>0 inflaria esse número pra sempre.
-  // Também conta quando só o fornecedor mudou (sem tocar na quantidade).
+  // Conta só o que realmente mudou (difere do que já tá salvo como pendente) — a
+  // caixinha fica vazia por padrão (o total já pedido só aparece no "( qtd )" do
+  // lado do nome, não dentro do input, desde 10/09/2026), então só entra na conta
+  // quem tem rascunho digitado nessa sessão. Também conta quando só o fornecedor
+  // mudou (sem tocar na quantidade).
   let t=0;
   Object.keys(PRODUTOS).forEach(c=>PRODUTOS[c].forEach(p=>{
     const draftVal=tabelaDraft[c][p];
@@ -3834,27 +3871,30 @@ function salvarTabela(){
     const tipo=tabelaDraftTipo[cat][p]||produtoPadrao(cat,p).tipo;
     const unid=tipoTemSubQtd(tipo)?(parseInt(tabelaDraftUnid[cat][p])||null):null;
     const forn=fornCheck?(fornCheck.nome||null):(existente?(existente.fornecedor||null):null);
-    if(qtd===jaPedido&&existente&&(existente.tipo||'unidade')===(tipo||'unidade')&&(existente.unidPorCaixa||null)===(unid||null)&&(existente.fornecedor||null)===forn)return; // sem mudança de verdade
+    // Depois de decidir o que fazer com esse produto, o rascunho dele é sempre limpo
+    // (pedido do Tito, 10/09/2026: "uma vez que lançou ele não aparece mais ali") —
+    // a caixinha volta a ficar vazia e o valor já pedido passa a aparecer só no
+    // "( qtd )" do lado do nome, não mais dentro do input.
+    const limparDraft=()=>{delete tabelaDraft[cat][p];if(tabelaDraftTipo[cat])delete tabelaDraftTipo[cat][p];if(tabelaDraftUnid[cat])delete tabelaDraftUnid[cat][p];if(tabelaDraftForn[cat])delete tabelaDraftForn[cat][p];};
+    if(qtd===jaPedido&&existente&&(existente.tipo||'unidade')===(tipo||'unidade')&&(existente.unidPorCaixa||null)===(unid||null)&&(existente.fornecedor||null)===forn){limparDraft();return;} // sem mudança de verdade
     if(qtd<=0){
+      limparDraft();
       if(existente){itensPedido=itensPedido.filter(i=>i.id!==existente.id);syncPedidoDelete(existente.id);n++;}
       return;
     }
-    if(existente){existente.qtd=qtd;existente.tipo=tipo;existente.unidPorCaixa=unid;existente.fornecedor=forn;syncPedidoUpdate(existente);}
+    if(existente){existente.qtd=qtd;existente.tipo=tipo;existente.unidPorCaixa=unid;existente.fornecedor=forn;syncPedidoUpdate(existente);limparDraft();}
     else {
-      // Produto sem pendente, mas já resolvido (comprado/não comprado) HOJE — pedido novo
-      // em cima disso é o padrão exato do bug real achado nas lojas 36/38/40/41 (pedido e
-      // compra duplicados minutos/horas depois, mesma qtd): a pessoa lança pedido+compra
-      // junto, a caixinha esvazia depois de comprar, e ela digita de novo achando que
-      // ainda não tinha pedido. Confirma antes de criar, em vez de duplicar direto.
-      const resolvidoHoje=itemResolvidoHojePorProduto(cat,p);
-      if(resolvidoHoje&&typeof confirm==='function'){
-        const acao=resolvidoHoje.status==='comprado'?'já foi marcado como COMPRADO':'já foi marcado como NÃO comprado';
-        if(!confirm(`"${p}" ${acao} hoje (${resolvidoHoje.qtd} ${tipoAbrev(resolvidoHoje.tipo)}). Tem certeza que quer lançar mais ${qtd} como um pedido novo?\n\nSe já comprou isso hoje, provavelmente não precisa pedir de novo.`))return;
-      }
-      adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,fornecedor:forn});
+      // A trava de "já resolvido hoje" (comprado/não comprado) mora dentro de
+      // adicionarOuSomarPedido() agora — cobre esse fluxo (Tabela) E o fluxo item-por-item
+      // (addPedido/view-lista), que tinha ficado sem proteção nenhuma. Ver comentário lá
+      // e fix-duplicacao-produto-e-item-por-item-2026-09-09.md.
+      const criado=adicionarOuSomarPedido({produto:p,categoria:cat,qtd,tipo,unidPorCaixa:unid,fornecedor:forn});
+      if(!criado)return; // usuário cancelou a confirmação de "já resolvido hoje" — mantém o rascunho, não perde o que digitou
+      limparDraft();
     }
     n++;
   });});
+  persistDraftLocal(); // reflete os rascunhos limpos no localStorage também
   renderTabelaGrid();renderPedidoTabela();renderPedido();renderPendentes();renderHistorico();updateSalvarLabel();
   if(n>0)showToast(`${n} iten${n===1?'':'s'} atualizado${n===1?'':'s'}!`);
   if(invalidos.length)showToast(`Fornecedor não cadastrado, não salvo: ${invalidos.join(', ')}`);
@@ -7515,15 +7555,15 @@ async function carregarDadosDaLoja(){
     // Preço final via RPC (banco) — só pro papel Supervisor(a), que desde
     // 2026-08-25 não tem mais leitura direta de margem_global/margens_custom.
     // A função no banco calcula o preço com a margem real e devolve só o
-    // resultado, sem expor custo nem % de margem pro navegador dela.
-    precoFinalRPC={};
+    // resultado, sem expor custo nem % de margem pro navegador dela. Usa o mês já
+    // escolhido no seletor da aba "Preço por Produto", se a pessoa já tiver aberto
+    // essa aba antes (não reseta a escolha ao trocar de loja); senão, mês de
+    // currentDate — mesmo padrão usado por mapaPrecoFinalPorProduto() pro dono/gerente.
     if(currentUser&&currentUser.role==='supervisor'){
-      try{
-        const {data:pfData,error:pfErr}=await db.rpc('preco_final_por_produto',{p_loja_id:currentLojaId});
-        if(!pfErr&&pfData){
-          pfData.forEach(r=>{precoFinalRPC[r.produto]={categoria:r.categoria,precoFinal:parseFloat(r.preco_final),qtdComprada:parseFloat(r.qtd_comprada)};});
-        }
-      }catch(e){}
+      const mesInicial=(el('precoFinalMesFiltro')&&el('precoFinalMesFiltro').value)||currentDate.substring(0,7);
+      await carregarPrecoFinalRPC(mesInicial);
+    }else{
+      precoFinalRPC={};
     }
 
   }catch(e){
@@ -7983,18 +8023,19 @@ function renderPrecosMedia(){
 // (custo médio do histórico de compras dessa loja x margem). Reaproveitado pela
 // tabela de "Preço por Produto" (renderPrecoFinal) e pelo relatório de valores finais
 // da Supervisor(a) (calcRelFinalTotals), pra não duplicar a mesma conta em dois lugares.
-function mapaPrecoFinalPorProduto(){
+function mapaPrecoFinalPorProduto(mesSel){
   // Supervisor(a) não tem mais leitura direta de margem_global/margens_custom
   // no banco (RLS restrita a 'manager' desde 2026-08-25) — pra ela, o preço
-  // final vem pronto do banco via RPC (ver carregarDadosDaLoja), calculado do
-  // lado de lá sem nunca expor custo nem % de margem pro navegador dela.
+  // final vem pronto do banco via RPC (ver carregarPrecoFinalRPC), já calculado
+  // pro mês escolhido, sem nunca expor custo nem % de margem pro navegador dela.
   if(currentUser&&currentUser.role==='supervisor'){
     return precoFinalRPC;
   }
-  // Custo médio do MÊS CORRENTE (mês de currentDate), mesma regra de
-  // renderPrecosMedia(): média por dia comprado, não por nota nem por dia
-  // do mês inteiro. Produto sem compra nesse mês não entra no mapa.
-  const mesRef=currentDate.substring(0,7);
+  // Custo médio do mês pedido (mesma regra de renderPrecosMedia(): média por dia
+  // comprado, não por nota nem por dia do mês inteiro). Sem mês explícito, cai no
+  // mês de currentDate — mantém compatível com calcRelFinalTotals(), que sempre
+  // quer o mês corrente do relatório. Produto sem compra nesse mês não entra no mapa.
+  const mesRef=mesSel||currentDate.substring(0,7);
   const mediaMap=custoMedioMensalPorProduto(mesRef);
 
   // Quantidade total já comprada de cada produto (soma de TODAS as compras
@@ -8011,11 +8052,51 @@ function mapaPrecoFinalPorProduto(){
   });
   return mapa;
 }
+// Garante que o seletor de mês da aba "Preço por Produto" comece no mês corrente,
+// sem sobrescrever um mês que a pessoa já tenha escolhido (mesmo padrão de
+// garantirMesPrecoPadrao(), aba Preços).
+function garantirMesPrecoFinalPadrao(){
+  const elMes=el('precoFinalMesFiltro');
+  if(elMes&&!elMes.value){
+    const d=new Date();
+    elMes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
+}
+// Supervisor(a) não calcula o preço final no navegador (RLS bloqueia leitura de
+// custo/margem pra ela) — precisa buscar de novo no banco toda vez que o mês
+// escolhido mudar. Dono/gerente calculam local (mapaPrecoFinalPorProduto já
+// recebe o mês direto), então não passam por aqui.
+async function carregarPrecoFinalRPC(mesSel){
+  precoFinalRPC={};
+  try{
+    const{data:pfData,error:pfErr}=await db.rpc('preco_final_por_produto',{p_loja_id:currentLojaId,p_ano_mes:mesSel});
+    if(!pfErr&&pfData){
+      pfData.forEach(r=>{precoFinalRPC[r.produto]={categoria:r.categoria,precoFinal:parseFloat(r.preco_final),qtdComprada:parseFloat(r.qtd_comprada)};});
+    }
+  }catch(e){}
+}
+async function onPrecoFinalMesChange(){
+  if(currentUser&&currentUser.role==='supervisor'){
+    showToast('Atualizando preço do mês…');
+    await carregarPrecoFinalRPC(el('precoFinalMesFiltro').value);
+  }
+  renderPrecoFinal();
+}
+async function precoFinalMesMudar(delta){
+  garantirMesPrecoFinalPadrao();
+  const elMes=el('precoFinalMesFiltro');
+  const[y,m]=elMes.value.split('-').map(Number);
+  const dt=new Date(y,m-1+delta,1);
+  elMes.value=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+  await onPrecoFinalMesChange();
+}
 function renderPrecoFinal(){
+  garantirMesPrecoFinalPadrao();
   const catF      = el('precoFinalCatFilter')?el('precoFinalCatFilter').value:'';
   const prodFiltro= (el('precoFinalProdFiltro')?el('precoFinalProdFiltro').value:'').toLowerCase();
+  const mesSel    = el('precoFinalMesFiltro')?el('precoFinalMesFiltro').value:currentDate.substring(0,7);
 
-  const mapa=mapaPrecoFinalPorProduto();
+  const mapa=mapaPrecoFinalPorProduto(mesSel);
   let rows=Object.keys(mapa).map(prod=>({produto:prod,categoria:mapa[prod].categoria,precoFinal:mapa[prod].precoFinal,qtdComprada:mapa[prod].qtdComprada}));
 
   if(catF)       rows=rows.filter(r=>r.categoria===catF);
