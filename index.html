@@ -588,21 +588,22 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <!-- PREÇO CLIENTE (só supervisor(a) — versão enxuta da aba Custo/Preço, sem custo nem margem) -->
       <section id="tab-precofinal" style="display:none;">
         <p style="font-size:12px;color:var(--text2);margin-bottom:.875rem;">Preço de venda por produto, já com a margem aplicada. Use na hora de fazer o pedido.</p>
-        <div style="display:flex;gap:8px;margin-bottom:.5rem;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;flex-wrap:wrap;">
           <select id="precoFinalPeriodoTipo" onchange="onPrecoFinalPeriodoTipoChange()" style="flex:none;width:auto;">
             <option value="mes">Por mês</option>
             <option value="semana">Por semana</option>
           </select>
-        </div>
-        <div id="precoFinalMesWrap" style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
-          <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
-          <input type="month" id="precoFinalMesFiltro" onchange="onPrecoFinalPeriodoChange()" style="flex:1;text-align:center;"/>
-          <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(1)" title="Próximo mês" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
-        </div>
-        <div id="precoFinalSemanaWrap" style="display:none;align-items:center;gap:8px;margin-bottom:.75rem;">
-          <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(-1)" title="Semana anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
-          <input type="week" id="precoFinalSemanaFiltro" onchange="onPrecoFinalPeriodoChange()" style="flex:1;text-align:center;"/>
-          <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(1)" title="Próxima semana" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+          <div id="precoFinalMesWrap" style="display:flex;align-items:center;gap:6px;">
+            <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(-1)" title="Mês anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
+            <input type="month" id="precoFinalMesFiltro" onchange="onPrecoFinalPeriodoChange()" style="width:150px;text-align:center;"/>
+            <button class="btn-ghost btn-sm" onclick="precoFinalMesMudar(1)" title="Próximo mês" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+          </div>
+          <div id="precoFinalSemanaWrap" style="display:none;align-items:center;gap:6px;">
+            <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(-1)" title="Semana anterior" style="flex:none;"><i class="ti ti-chevron-left"></i></button>
+            <input type="hidden" id="precoFinalSemanaFiltro"/>
+            <span id="precoFinalSemanaLabel" style="min-width:150px;text-align:center;font-size:13px;font-weight:600;white-space:nowrap;"></span>
+            <button class="btn-ghost btn-sm" onclick="precoFinalSemanaMudar(1)" title="Próxima semana" style="flex:none;"><i class="ti ti-chevron-right"></i></button>
+          </div>
         </div>
         <div class="field-row" style="margin-bottom:.75rem;">
           <select id="precoFinalCatFilter" onchange="renderPrecoFinal()"></select>
@@ -8084,38 +8085,41 @@ function garantirMesPrecoFinalPadrao(){
     elMes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
   }
 }
-// Semana ISO-8601 (segunda a domingo) de uma data qualquer, no formato do
-// <input type="week"> ('YYYY-Www') — regra padrão: semana 1 é a que contém a
-// primeira quinta-feira do ano.
-function isoWeekDeData(date){
-  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
-  const diaIso=(d.getUTCDay()+6)%7; // 0=segunda...6=domingo
-  d.setUTCDate(d.getUTCDate()-diaIso+3); // quinta-feira dessa semana
-  const primeiraQuinta=new Date(Date.UTC(d.getUTCFullYear(),0,4));
-  const diasDif=Math.round((d-primeiraQuinta)/86400000);
-  const semana=1+Math.round(diasDif/7);
-  return d.getUTCFullYear()+'-W'+String(semana).padStart(2,'0');
+// "Semana do mês" — NÃO é semana ISO corrida (que atravessa mês), e sim o mesmo
+// recorte fixo já usado no comparativo semanal do sistema (getWeekBounds, linha ~5580):
+// semana 0 = dias 1-7, 1 = 8-14, 2 = 15-21, 3 = 22-fim do mês. Cada semana sempre
+// pertence a um único mês/ano, guardado junto no valor ('YYYY-MM-N', N=0..3).
+function semanaMesDeData(date){
+  const dia=date.getDate();
+  if(dia<=7)return 0;
+  if(dia<=14)return 1;
+  if(dia<=21)return 2;
+  return 3;
 }
-function isoWeekAtual(){return isoWeekDeData(new Date());}
-// Converte o valor de um <input type="week"> ('YYYY-Www') no intervalo de datas
-// segunda→domingo correspondente ('YYYY-MM-DD').
+function semanaMesAtual(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+semanaMesDeData(d);
+}
+// Converte o valor guardado ('YYYY-MM-N') no intervalo de datas daquela semana
+// dentro do mês, reaproveitando getWeekBounds (mesma função do comparativo semanal).
 function semanaParaIntervalo(valor){
-  const[anoStr,wStr]=valor.split('-W');
-  const ano=parseInt(anoStr,10),semana=parseInt(wStr,10);
-  const jan4=new Date(ano,0,4);
-  const diaIsoJan4=(jan4.getDay()+6)%7;
-  const segSemana1=new Date(jan4);
-  segSemana1.setDate(jan4.getDate()-diaIsoJan4);
-  const seg=new Date(segSemana1);
-  seg.setDate(segSemana1.getDate()+(semana-1)*7);
-  const dom=new Date(seg);
-  dom.setDate(seg.getDate()+6);
-  const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  return{de:fmt(seg),ate:fmt(dom)};
+  const[anoStr,mesStr,idxStr]=valor.split('-');
+  const idx=parseInt(idxStr,10);
+  const bounds=getWeekBounds(idx,`${anoStr}-${mesStr}-01`);
+  return{de:bounds.start,ate:bounds.end,label:bounds.label};
 }
 function garantirSemanaPrecoFinalPadrao(){
   const elSem=el('precoFinalSemanaFiltro');
-  if(elSem&&!elSem.value)elSem.value=isoWeekAtual();
+  if(elSem&&!elSem.value)elSem.value=semanaMesAtual();
+}
+const MESES_ABREV_PF=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function atualizarLabelPrecoFinalSemana(){
+  const elLabel=el('precoFinalSemanaLabel');
+  const elSem=el('precoFinalSemanaFiltro');
+  if(!elLabel||!elSem||!elSem.value)return;
+  const[anoStr,mesStr]=elSem.value.split('-');
+  const{label}=semanaParaIntervalo(elSem.value);
+  elLabel.textContent=`${label} · ${MESES_ABREV_PF[parseInt(mesStr,10)-1]}/${anoStr.slice(2)}`;
 }
 // Monta o descritor de período ({tipo:'mes',mes} ou {tipo:'semana',de,ate}) a partir
 // do que estiver selecionado agora nos controles da aba "Preço por Produto".
@@ -8123,6 +8127,7 @@ function obterPeriodoPrecoFinal(){
   const tipo=el('precoFinalPeriodoTipo')?el('precoFinalPeriodoTipo').value:'mes';
   if(tipo==='semana'){
     garantirSemanaPrecoFinalPadrao();
+    atualizarLabelPrecoFinalSemana();
     const{de,ate}=semanaParaIntervalo(el('precoFinalSemanaFiltro').value);
     return{tipo:'semana',de,ate};
   }
@@ -8171,10 +8176,11 @@ async function precoFinalMesMudar(delta){
 async function precoFinalSemanaMudar(delta){
   garantirSemanaPrecoFinalPadrao();
   const elSem=el('precoFinalSemanaFiltro');
-  const{de}=semanaParaIntervalo(elSem.value);
-  const[y,m,dd]=de.split('-').map(Number);
-  const novaSegunda=new Date(y,m-1,dd+delta*7);
-  elSem.value=isoWeekDeData(novaSegunda);
+  let[ano,mes,idx]=elSem.value.split('-').map(Number);
+  idx+=delta;
+  while(idx<0){idx+=4;mes--;if(mes<1){mes=12;ano--;}}
+  while(idx>3){idx-=4;mes++;if(mes>12){mes=1;ano++;}}
+  elSem.value=ano+'-'+String(mes).padStart(2,'0')+'-'+idx;
   await onPrecoFinalPeriodoChange();
 }
 function renderPrecoFinal(){
