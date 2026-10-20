@@ -1398,6 +1398,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       <p style="font-size:12px;color:var(--text2);margin-top:4px;">Por loja cadastrada · Cancele quando quiser</p>
     </div>
     <button class="btn-primary" onclick="irParaAssinatura()" style="margin-bottom:.625rem;"><i class="ti ti-credit-card"></i> Assinar agora</button>
+    <button class="btn-ghost btn-w" onclick="dispensarSubWall()" style="margin-bottom:.625rem;">Agora não</button>
     <button class="btn-ghost btn-w" onclick="doLogout()"><i class="ti ti-logout"></i> Sair</button>
     <p style="font-size:11px;color:var(--text3);margin-top:1rem;" id="subTrialInfo"></p>
   </div>
@@ -2243,6 +2244,7 @@ async function enterApp(){
   // Mostrar aba master só para admin
   const masterBtn=el('sideMaster');
   if(masterBtn)masterBtn.style.display=(currentUser&&currentUser.isAdmin)?'':'none';
+  subWallDispensadaNestaEntrada=false;
   setTimeout(checkSubscription,300);
 }
 
@@ -2369,6 +2371,7 @@ async function selectLoja(id){
   closeStoreModal();
   await carregarDadosDaLoja();
   init();
+  subWallDispensadaNestaEntrada=false;
   await checkSubscription();
   showToast('Trocou para '+lojas.find(l=>l.id===id).nome);
 }
@@ -2713,6 +2716,14 @@ async function moverLojaMaster(id,direcao){
 }
 
 let acessoOperacionalBloqueado=false;
+// Controla a tela cheia de aviso (subWall) exibida ao vencer — aparece uma vez por
+// entrada (login ou troca de loja, ver enterApp()/selectLoja()) e some se o usuário
+// clicar em "Agora não"; o bloqueio de verdade (Pedidos/Compras) não depende dela.
+let subWallDispensadaNestaEntrada=false;
+function dispensarSubWall(){
+  subWallDispensadaNestaEntrada=true;
+  el('subWall').style.display='none';
+}
 async function checkSubscription(){
   try{
     const {data:subRows}=await db.rpc('status_assinatura_efetiva',{p_loja_id:currentLojaId});
@@ -2770,13 +2781,18 @@ async function checkSubscription(){
   atualizarAvisoVencimento();
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
-    // Bloqueio é só nas abas operacionais (Pedidos/Compras) — o resto do sistema
-    // (Despesas, Fornecedores, Relatórios, Assinatura, Usuários, etc.) continua
-    // acessível normalmente pra qualquer papel, incluindo dono/gerente/comprador. Não
-    // usa mais a parede de pagamento em tela cheia (subWall) — só tira o usuário de
-    // Pedidos/Compras se ele estiver numa delas, com um aviso, e mostra o cadeado
-    // nesses dois itens de menu (ver atualizarBloqueioMenu()).
-    el('subWall').style.display='none';
+    // Bloqueio de verdade é só nas abas operacionais (Pedidos/Compras) — o resto do
+    // sistema (Despesas, Fornecedores, Relatórios, Assinatura, Usuários, etc.)
+    // continua acessível normalmente pra qualquer papel, incluindo dono/gerente/
+    // comprador (ver switchTab()/atualizarBloqueioMenu()). Além disso, uma vez por
+    // entrada (login ou troca de loja — flag resetada em enterApp()/selectLoja()),
+    // mostra a parede de aviso em tela cheia (subWall) levando pra Assinatura; o
+    // usuário pode fechar com "Agora não" e seguir usando o resto do sistema normal.
+    if(!subWallDispensadaNestaEntrada){
+      el('subWall').style.display='flex';
+    } else {
+      el('subWall').style.display='none';
+    }
     const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
     if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
   } else {
@@ -2839,6 +2855,7 @@ function atualizarBloqueioMenu(){
   });
 }
 function irParaAssinatura(){
+  subWallDispensadaNestaEntrada=true;
   el('subWall').style.display='none';
   switchTab('assinatura');
 }
