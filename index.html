@@ -2728,7 +2728,11 @@ async function checkSubscription(){
         subscription.expiresAt=dataLocalDeStr(trialFim);
       } else if(status==='ativa'||status==='isenta'){
         subscription.status='active';
-        subscription.expiresAt=dataLocalDeStr(sub.proxima_cobranca)||new Date('2099-01-01');
+        // new Date('2099-01-01') (string ISO) é interpretado como meia-noite UTC — no
+        // fuso do Brasil (UTC-3) isso exibe "31/12/2098" em vez de "01/01/2099" ao
+        // formatar com toLocaleDateString. new Date(2099,0,1) usa o construtor "ano,
+        // mês, dia" local, igual ao dataLocalDeStr() acima, sem esse desvio de fuso.
+        subscription.expiresAt=dataLocalDeStr(sub.proxima_cobranca)||new Date(2099,0,1);
       } else if(status==='vencida'&&sub.proxima_cobranca){
         // Venceu, mas dá carência de DIAS_UTEIS_CARENCIA dia(s) útil(eis) após o
         // vencimento antes de bloquear o acesso operacional — só bloqueia mesmo se
