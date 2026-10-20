@@ -2753,7 +2753,18 @@ async function checkSubscription(){
       subscription.valorMensal=parseFloat(sub.valor_mensal)||250;
       subscription.plano=sub.plano||'mensal';
     }
-  }catch(e){}
+  }catch(e){
+    // Erro de verdade na consulta (RPC quebrada, rede, etc.) ficava em silêncio total
+    // aqui — e o `subscription` global some pro valor padrão hardcoded lá em cima
+    // (status:'trial', 3 dias), que não bloqueia nada. Isso já causou, na prática, a
+    // parede de pagamento sumir pro cliente sem ninguém perceber, porque um bug na
+    // function (ou qualquer outra falha transitória) silenciosamente liberava acesso
+    // em vez de travar. Loga o erro pra dar pra investigar, e trata como vencida sem
+    // carência — erra pro lado de bloquear (e pedir pra recarregar) em vez de liberar
+    // acesso sem conseguir confirmar se a assinatura está em dia.
+    console.error('checkSubscription: falha ao consultar status_assinatura_efetiva — tratando como bloqueado até confirmar de novo.',e);
+    subscription.status='expired';
+  }
   atualizarLabelsPreco();
   updateSubStatus();
   atualizarAvisoVencimento();
