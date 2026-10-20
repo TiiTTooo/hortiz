@@ -2789,12 +2789,19 @@ function atualizarAvisoVencimento(){
   const banner=el('avisoVencimentoBanner');
   if(!banner)return;
   const podeVerCarencia=currentUser&&(currentUser.role==='owner'||currentUser.role==='manager'||currentUser.isAdmin);
-  if(subscription.status==='grace'&&podeVerCarencia){
-    // Vencida, mas dentro da carência — ainda com acesso liberado. Avisa em vermelho
-    // (mais urgente que o aviso de "vai vencer") pra não passar despercebido, já que
-    // gerente também precisa saber que o bloqueio está chegando.
-    const quandoBloqueia=subscription.graceDiasRestantes<=0?'a qualquer momento':subscription.graceDiasRestantes===1?'amanhã':'em '+subscription.graceDiasRestantes+' dias';
-    el('avisoVencimentoTexto').textContent=`Sua assinatura venceu em ${subscription.expiresAt.toLocaleDateString('pt-BR')} e o pagamento ainda não foi confirmado. O acesso será bloqueado ${quandoBloqueia} se não regularizar.`;
+  if((subscription.status==='grace'||subscription.status==='expired')&&podeVerCarencia){
+    // Vencida — seja ainda dentro da carência (acesso geral liberado, só avisa que o
+    // bloqueio tá chegando) ou já vencida de verdade (Pedidos/Compras já bloqueados).
+    // Essa função roda toda vez que a tela carrega — login, troca de loja, depois de
+    // pagamento (ver checkSubscription()) — então o aviso reaparece em todo login
+    // enquanto o status continuar vencido, não é um toast que passa uma vez só.
+    const exp=subscription.expiresAt.toLocaleDateString('pt-BR');
+    if(subscription.status==='expired'){
+      el('avisoVencimentoTexto').textContent=`Sua assinatura venceu em ${exp} e o pagamento ainda não foi confirmado. O acesso a Pedidos e Compras está bloqueado até você regularizar.`;
+    } else {
+      const quandoBloqueia=subscription.graceDiasRestantes<=0?'a qualquer momento':subscription.graceDiasRestantes===1?'amanhã':'em '+subscription.graceDiasRestantes+' dias';
+      el('avisoVencimentoTexto').textContent=`Sua assinatura venceu em ${exp} e o pagamento ainda não foi confirmado. O acesso será bloqueado ${quandoBloqueia} se não regularizar.`;
+    }
     banner.style.background='var(--red-bg)';
     banner.style.color='var(--red)';
     banner.style.borderColor='var(--red)';
