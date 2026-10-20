@@ -6086,9 +6086,15 @@ function renderMasterLista(){
   dataAtivas.forEach(l=>{
     const sub=l.assinaturas&&l.assinaturas[0];
     if(!sub)return;
-    if(sub.status==='ativa'){ativas++;mrr+=parseFloat(sub.valor_mensal||250);}
-    else if(sub.status==='trial')trial++;
-    else if(sub.status==='vencida')vencidas++;
+    // "ativa" com vencimento mensal. já no passado não é confiável de verdade (o
+    // webhook pode nunca ter avisado) — mesma regra do status_assinatura_efetiva()
+    // no banco, replicada aqui porque esse painel lê o status bruto da tabela
+    // assinaturas, sem passar pela RPC.
+    const vencidaDeVerdade=sub.status==='ativa'&&sub.proxima_cobranca&&sub.proxima_cobranca<todayStr();
+    const statusEfetivo=vencidaDeVerdade?'vencida':sub.status;
+    if(statusEfetivo==='ativa'){ativas++;mrr+=parseFloat(sub.valor_mensal||250);}
+    else if(statusEfetivo==='trial')trial++;
+    else if(statusEfetivo==='vencida')vencidas++;
   });
   el('mTotalLojas').textContent=dataAtivas.length;
   el('mAtivas').textContent=ativas;
@@ -6101,6 +6107,11 @@ function renderMasterLista(){
   el('masterLista').innerHTML=filtradas.map((l,i)=>{
     const sub=l.assinaturas&&l.assinaturas[0];
     const status=sub?sub.status:'sem_assinatura';
+    // Mesma regra do totalizador acima: "ativa" com vencimento já passado é exibida
+    // como vencida de verdade, em vez do rótulo "Ativa" desatualizado. O <select> de
+    // edição continua mostrando o status bruto (é o que de fato está salvo).
+    const vencidaDeVerdade=status==='ativa'&&sub&&sub.proxima_cobranca&&sub.proxima_cobranca<todayStr();
+    const statusExibido=vencidaDeVerdade?'vencida':status;
     const statusLabel={trial:'⏳ Trial',ativa:'✅ Ativa',isenta:'🔗 Vinculada (sem cobrança)',vencida:'🔴 Vencida',cancelada:'⚫ Cancelada',sem_assinatura:'⚪ Sem assinatura'};
     const statusCor={trial:'var(--amber)',ativa:'var(--accent)',isenta:'var(--blue)',vencida:'var(--red)',cancelada:'var(--text3)',sem_assinatura:'var(--text3)'};
     const valor=sub?parseFloat(sub.valor_mensal||250):250;
@@ -6115,7 +6126,7 @@ function renderMasterLista(){
           <div style="font-size:15px;font-weight:700;">${esc(l.nome)}${l.ativa===false?' <span style="font-size:11px;font-weight:700;color:var(--red);background:var(--red-bg);padding:2px 8px;border-radius:10px;margin-left:4px;">DESATIVADA</span>':''}</div>
           <div style="font-size:12px;color:var(--text2);">${l.endereco||'—'} · ID: ${l.id}</div>
         </div>
-        <span style="font-size:12px;font-weight:700;color:${statusCor[status]||'var(--text2)'};">${statusLabel[status]||status}</span>
+        <span style="font-size:12px;font-weight:700;color:${statusCor[statusExibido]||'var(--text2)'};">${statusLabel[statusExibido]||statusExibido}${vencidaDeVerdade?' <span style="font-size:10px;font-weight:700;color:var(--red);">(venceu '+sub.proxima_cobranca.split('-').reverse().join('/')+')</span>':''}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:.5rem;margin-bottom:.75rem;">
         <div>
@@ -6134,7 +6145,7 @@ function renderMasterLista(){
         </div>
         <div>
           <label style="font-size:10px;color:var(--text3);text-transform:uppercase;display:block;margin-bottom:2px;">Vencimento mensal.</label>
-          <input type="date" value="${sub&&sub.proxima_cobranca?sub.proxima_cobranca:''}" id="masterVenc_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;"/>
+          <input type="date" value="${sub&&sub.proxima_cobranca?sub.proxima_cobranca:''}" id="masterVenc_${l.id}" style="width:100%;font-size:13px;padding:4px 8px;${vencidaDeVerdade?'border-color:var(--red);color:var(--red);font-weight:700;':''}"/>
         </div>
         <div>
           <label style="font-size:10px;color:var(--text3);text-transform:uppercase;display:block;margin-bottom:2px;">Status</label>
