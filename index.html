@@ -2908,9 +2908,24 @@ function abaRestauravelParaUsuario(tab){
   return true;
 }
 function switchTab(tab){
-  if(acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='supervisor')&&(tab==='pedidos'||tab==='compras')){
-    showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
-    return;
+  if(acessoOperacionalBloqueado&&currentUser){
+    if(currentUser.role==='pedidos'||currentUser.role==='supervisor'){
+      if(tab==='pedidos'||tab==='compras'){
+        showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
+        return;
+      }
+    } else if(tab!=='assinatura'){
+      // Dono, gerente e comprador veem a parede de pagamento inteira (igual a
+      // checkSubscription()) — reforça aqui porque a parede só é (re)exibida em
+      // checkSubscription() (login, troca de loja, após pagamento), nunca em
+      // switchTab(). Sem essa trava, clicar "Assinar agora" (que esconde a
+      // parede incondicionalmente, mesmo sem concluir o pagamento) e depois
+      // navegar direto pelo menu lateral pra Pedidos/Compras/etc. driblava o
+      // bloqueio até o próximo login — a assinatura vencida nunca travava de
+      // verdade pra esses papéis.
+      el('subWall').style.display='flex';
+      return;
+    }
   }
   if(currentUser&&currentUser.role==='pedidos'&&tab!=='home'&&tab!=='pedidos'){
     showToast('Seu acesso é só pra fazer pedidos.');
