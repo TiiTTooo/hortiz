@@ -2768,19 +2768,17 @@ async function checkSubscription(){
   atualizarLabelsPreco();
   updateSubStatus();
   atualizarAvisoVencimento();
-  const souApenasPedidos=currentUser&&(currentUser.role==='pedidos'||currentUser.role==='supervisor');
   if(subscription.status==='expired'){
     acessoOperacionalBloqueado=true;
-    if(souApenasPedidos){
-      // Apenas-pedidos (e supervisor(a)) não mexem com pagamento — só perdem acesso às abas operacionais
-      el('subWall').style.display='none';
-      const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
-      if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
-    } else {
-      // Gerente também vê a parede de pagamento agora — ele pode gerar a cobrança e pagar,
-      // só não pode cancelar (isso continua exclusivo do dono, ver renderAssinatura()).
-      el('subWall').style.display='flex';
-    }
+    // Bloqueio é só nas abas operacionais (Pedidos/Compras) — o resto do sistema
+    // (Despesas, Fornecedores, Relatórios, Assinatura, Usuários, etc.) continua
+    // acessível normalmente pra qualquer papel, incluindo dono/gerente/comprador. Não
+    // usa mais a parede de pagamento em tela cheia (subWall) — só tira o usuário de
+    // Pedidos/Compras se ele estiver numa delas, com um aviso, e mostra o cadeado
+    // nesses dois itens de menu (ver atualizarBloqueioMenu()).
+    el('subWall').style.display='none';
+    const tabAtual=document.querySelector('[data-tab].active')?.dataset.tab;
+    if(tabAtual==='pedidos'||tabAtual==='compras'){switchTab('home');showToast('Assinatura da loja vencida — fale com o dono pra renovar.');}
   } else {
     acessoOperacionalBloqueado=false;
     el('subWall').style.display='none';
@@ -2818,7 +2816,9 @@ function atualizarAvisoVencimento(){
   }
 }
 function atualizarBloqueioMenu(){
-  const bloquear=acessoOperacionalBloqueado&&currentUser&&(currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='supervisor');
+  // Cadeado em Pedidos/Compras pra qualquer papel quando a assinatura está vencida —
+  // o bloqueio real (em switchTab()) já vale pra todo mundo, isso só deixa visível.
+  const bloquear=acessoOperacionalBloqueado;
   document.querySelectorAll('[data-tab="pedidos"],[data-tab="compras"]').forEach(btn=>{
     btn.style.opacity=bloquear?'.4':'';
     btn.title=bloquear?'Assinatura vencida — acesso bloqueado':'';
@@ -2923,24 +2923,11 @@ function abaRestauravelParaUsuario(tab){
   return true;
 }
 function switchTab(tab){
-  if(acessoOperacionalBloqueado&&currentUser){
-    if(currentUser.role==='pedidos'||currentUser.role==='supervisor'){
-      if(tab==='pedidos'||tab==='compras'){
-        showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
-        return;
-      }
-    } else if(tab!=='assinatura'){
-      // Dono, gerente e comprador veem a parede de pagamento inteira (igual a
-      // checkSubscription()) — reforça aqui porque a parede só é (re)exibida em
-      // checkSubscription() (login, troca de loja, após pagamento), nunca em
-      // switchTab(). Sem essa trava, clicar "Assinar agora" (que esconde a
-      // parede incondicionalmente, mesmo sem concluir o pagamento) e depois
-      // navegar direto pelo menu lateral pra Pedidos/Compras/etc. driblava o
-      // bloqueio até o próximo login — a assinatura vencida nunca travava de
-      // verdade pra esses papéis.
-      el('subWall').style.display='flex';
-      return;
-    }
+  // Bloqueio de assinatura vencida: só nas abas Pedidos e Compras, pra qualquer
+  // papel — o resto do sistema continua liberado (ver checkSubscription()).
+  if(acessoOperacionalBloqueado&&(tab==='pedidos'||tab==='compras')){
+    showToast('Assinatura da loja vencida — fale com o dono pra renovar.');
+    return;
   }
   if(currentUser&&currentUser.role==='pedidos'&&tab!=='home'&&tab!=='pedidos'){
     showToast('Seu acesso é só pra fazer pedidos.');
