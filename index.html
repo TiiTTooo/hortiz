@@ -1543,8 +1543,17 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
       </div>
     </div>
 
+    <div id="importCeiStepProd" style="display:none;">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Esses produtos ainda não estão cadastrados no catálogo. Escolha a categoria de cada um pra seguir com eles nesse pedido — o cadastro é feito uma vez só, pra todas as suas lojas, sem precisar repetir loja por loja.</p>
+      <div id="importCeiStepProdLista" style="overflow-x:auto;margin-bottom:.75rem;"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="voltarImportCeiStepProd()"><i class="ti ti-arrow-left"></i> Voltar</button>
+        <button class="btn-primary" id="importCeiBtnCadastrarProd" style="flex:1;" onclick="confirmarProdutosPendentesImportCei()"><i class="ti ti-plus"></i> Cadastrar produtos e continuar</button>
+      </div>
+    </div>
+
     <div id="importCeiStep3" style="display:none;">
-      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Revise cada loja antes de gravar. Itens fora do padrão (comparados com os pedidos anteriores) e produtos não cadastrados precisam de confirmação manual.</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Revise cada loja antes de gravar. Itens fora do padrão (comparados com os pedidos anteriores) precisam de confirmação manual.</p>
       <div id="importCeiStep3Corpo"></div>
       <div style="display:flex;gap:8px;margin-top:1rem;">
         <button class="btn-ghost" onclick="voltarImportCeiStep2()"><i class="ti ti-arrow-left"></i> Voltar</button>
@@ -3394,7 +3403,7 @@ function repetirUltimoPedido(){
    "Baixar modelo" gera um .xlsx no mesmo layout que o parser abaixo entende, já com os
    produtos cadastrados de cada loja (uma aba por loja que o usuário administra).
    Não roda em ambiente de teste — direto em produção, por pedido explícito do Tito. */
-let importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
+let importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{},produtosPendentes:[]};
 
 function normalizeNomeImportCei(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
@@ -3458,11 +3467,12 @@ async function baixarModeloImportCei(){
 }
 
 function abrirImportCei(){
-  importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{}};
+  importCei={workbook:null,dataEscolhida:null,sheets:[],resultado:{},produtosPendentes:[]};
   const fa=el('importCeiArquivo');if(fa)fa.value='';
   const fd=el('importCeiData');if(fd)fd.value='';
   el('importCeiStep1').style.display='';
   el('importCeiStep2').style.display='none';
+  const sp=el('importCeiStepProd');if(sp)sp.style.display='none';
   el('importCeiStep3').style.display='none';
   el('importCeiModal').classList.add('open');
 }
@@ -3604,6 +3614,10 @@ async function avancarImportCeiStep3(){
   if(new Set(idsLojas).size!==idsLojas.length){showToast('Duas abas estão apontando pra mesma loja — corrija antes de continuar.');return;}
   showToast('Processando planilha…');
   importCei.resultado={};
+  // Produtos "não cadastrados" encontrados em QUALQUER aba desta importação, deduplicados
+  // pelo nome normalizado — resolvidos numa tela única (importCeiStepProd) antes do
+  // preview final, em vez de pedir a categoria loja por loja (pedido do Tito, 2026-10-25).
+  const pendentesMap={};
   for(const s of abasComLoja){
     const lojaId=s.lojaEscolhidaId;
     const{data:catalogo}=await db.from('produtos').select('nome,categoria').eq('loja_id',lojaId).eq('ativo',true);
@@ -3628,47 +3642,87 @@ async function avancarImportCeiStep3(){
         mediana=ord.length%2?ord[(ord.length-1)/2]:(ord[ord.length/2-1]+ord[ord.length/2])/2;
         if(mediana>0&&(it.qtd<mediana*0.4||it.qtd>mediana*2.5))anomalia=true;
       }
+      if(!cat&&!pendentesMap[key])pendentesMap[key]={nome:it.nome,categoria:''};
       return{nomeOriginal:it.nome,nomeCatalogo:cat?cat.nome:it.nome,categoria:cat?cat.categoria:'',desconhecido:!cat,qtd:it.qtd,mediana,anomalia,confirmada:!anomalia};
     });
     importCei.resultado[lojaId]={lojaId,nomeLoja:(lojas.find(l=>l.id===lojaId)||{}).nome||('Loja '+lojaId),nomeAba:s.nomeAba,temColisao,sobrescrever:false,itens:itensResolvidos};
   }
-  renderImportCeiStep3();
+  importCei.produtosPendentes=Object.values(pendentesMap);
   el('importCeiStep2').style.display='none';
-  el('importCeiStep3').style.display='';
+  if(importCei.produtosPendentes.length){
+    renderImportCeiStepProd();
+    el('importCeiStepProd').style.display='';
+  } else {
+    renderImportCeiStep3();
+    el('importCeiStep3').style.display='';
+  }
 }
 
 function importCeiSetCategoria(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].categoria=val;atualizarBloqueioImportCei();}
-// Cadastra o produto "não cadastrado" direto da tela de importação, pedido do Tito
-// (2026-10-25) pra não precisar ir até Gerenciar Produtos. Cadastra em TODAS as lojas
-// do usuário (lojas[], a mesma lista usada no mapeamento aba→loja do passo 2), não só
-// na loja desse item — pedido explícito, pra não ter que repetir loja por loja. Também
-// resolve automaticamente qualquer outro item "não cadastrado" nesta mesma importação
-// com o mesmo nome normalizado, já que o produto passa a existir em todas as lojas.
-async function importCeiCadastrarProdutoTodasLojas(lojaId,idx){
-  const it=importCei.resultado[lojaId]&&importCei.resultado[lojaId].itens[idx];
-  if(!it)return;
-  if(!it.categoria){showToast('Escolha a categoria do produto antes de cadastrar.');return;}
+function importCeiSetCategoriaPendente(idx,val){importCei.produtosPendentes[idx].categoria=val;atualizarBloqueioImportCeiProd();}
+function atualizarBloqueioImportCeiProd(){
+  const btn=el('importCeiBtnCadastrarProd');
+  if(!btn)return;
+  const pendente=importCei.produtosPendentes.some(p=>!p.categoria);
+  btn.disabled=pendente;
+  btn.style.opacity=pendente?'.5':'';
+  btn.style.cursor=pendente?'not-allowed':'';
+  btn.title=pendente?'Escolha a categoria de todos os produtos antes de continuar':'';
+}
+function renderImportCeiStepProd(){
+  const CATEGORIAS=['fruta','legume','verdura','temperos','outros_itens','feculentos'];
+  let html='<table class="prod-table"><thead><tr><th>Produto</th><th style="width:160px">Categoria</th></tr></thead><tbody>';
+  importCei.produtosPendentes.forEach((p,idx)=>{
+    html+=`<tr>
+      <td style="font-size:12px;">${p.nome}</td>
+      <td style="font-size:12px;"><select onchange="importCeiSetCategoriaPendente(${idx},this.value)" style="font-size:12px;width:100%;">
+        <option value="">categoria…</option>
+        ${CATEGORIAS.map(c=>`<option value="${c}" ${p.categoria===c?'selected':''}>${c}</option>`).join('')}
+      </select></td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  el('importCeiStepProdLista').innerHTML=html;
+  atualizarBloqueioImportCeiProd();
+}
+function voltarImportCeiStepProd(){el('importCeiStepProd').style.display='none';el('importCeiStep2').style.display='';}
+// Cadastra TODOS os produtos pendentes de uma vez, em TODAS as lojas do usuário
+// (lojas[] — o mesmo universo usado no mapeamento aba→loja do passo 2), num único
+// upsert — não loja por loja, nem produto por produto. Depois resolve, pelo nome
+// normalizado, qualquer item ainda marcado "não cadastrado" em qualquer loja desta
+// importação, e segue pro preview final (passo 3).
+async function confirmarProdutosPendentesImportCei(){
+  if(!importCei.produtosPendentes.length){
+    el('importCeiStepProd').style.display='none';
+    renderImportCeiStep3();
+    el('importCeiStep3').style.display='';
+    return;
+  }
+  if(importCei.produtosPendentes.some(p=>!p.categoria)){showToast('Escolha a categoria de todos os produtos antes de continuar.');return;}
   if(!lojas.length)return;
-  const nome=it.nomeOriginal;
-  const categoria=it.categoria;
-  showToast(`Cadastrando "${nome}" em ${lojas.length} loja(s)…`);
+  showToast(`Cadastrando ${importCei.produtosPendentes.length} produto(s) em ${lojas.length} loja(s)…`);
   try{
-    const linhas=lojas.map(l=>({loja_id:l.id,categoria,nome,tipo:'caixa',unid_por_caixa:null,ativo:true}));
+    const linhas=[];
+    importCei.produtosPendentes.forEach(p=>{
+      lojas.forEach(l=>linhas.push({loja_id:l.id,categoria:p.categoria,nome:p.nome,tipo:'caixa',unid_por_caixa:null,ativo:true}));
+    });
     const{error}=await db.from('produtos').upsert(linhas,{onConflict:'loja_id,categoria,nome'});
-    if(error){showToast(traduzErro(error,'Erro ao cadastrar produto: '));return;}
-  }catch(e){showToast(traduzErro(e,'Erro ao cadastrar produto: '));return;}
-  const normAlvo=normalizeNomeImportCei(nome);
+    if(error){showToast(traduzErro(error,'Erro ao cadastrar produtos: '));return;}
+  }catch(e){showToast(traduzErro(e,'Erro ao cadastrar produtos: '));return;}
+  const catPorNome={};
+  importCei.produtosPendentes.forEach(p=>{catPorNome[normalizeNomeImportCei(p.nome)]={nome:p.nome,categoria:p.categoria};});
   Object.values(importCei.resultado).forEach(r=>{
-    r.itens.forEach(it2=>{
-      if(it2.desconhecido&&normalizeNomeImportCei(it2.nomeOriginal)===normAlvo){
-        it2.desconhecido=false;
-        it2.categoria=categoria;
-        it2.nomeCatalogo=nome;
+    r.itens.forEach(it=>{
+      if(it.desconhecido){
+        const m=catPorNome[normalizeNomeImportCei(it.nomeOriginal)];
+        if(m){it.desconhecido=false;it.categoria=m.categoria;it.nomeCatalogo=m.nome;}
       }
     });
   });
-  showToast(`"${nome}" cadastrado em ${lojas.length} loja(s).`);
+  showToast(`${importCei.produtosPendentes.length} produto(s) cadastrado(s) em ${lojas.length} loja(s).`);
+  el('importCeiStepProd').style.display='none';
   renderImportCeiStep3();
+  el('importCeiStep3').style.display='';
 }
 function importCeiSetConfirmada(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].confirmada=val;atualizarBloqueioImportCei();}
 function importCeiSetSobrescrever(lojaId,val){importCei.resultado[lojaId].sobrescrever=val;renderImportCeiStep3();}
@@ -3737,11 +3791,12 @@ function renderImportCeiStep3(){
         html+=`</td>
           <td style="font-size:12px;">`;
         if(it.desconhecido){
+          // Não deveria mais chegar aqui — produtos não cadastrados são resolvidos antes,
+          // na tela importCeiStepProd. Select mantido só como rede de segurança.
           html+=`${badge('badge-fiado','produto não cadastrado')} <select onchange="importCeiSetCategoria(${r.lojaId},${idx},this.value)" style="font-size:11px;margin-left:6px;">
             <option value="">categoria…</option>
             ${CATEGORIAS.map(c=>`<option value="${c}" ${it.categoria===c?'selected':''}>${c}</option>`).join('')}
-          </select>
-          <button class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px;" onclick="importCeiCadastrarProdutoTodasLojas(${r.lojaId},${idx})" title="Escolha a categoria e clique pra cadastrar esse produto em todas as suas lojas de uma vez"><i class="ti ti-plus"></i> Cadastrar em todas as lojas</button>`;
+          </select>`;
         }
         if(it.anomalia){
           html+=`${badge('badge-pendente',`fora do padrão (mediana ${it.mediana})`)} <label style="font-size:11px;margin-left:6px;cursor:pointer;"><input type="checkbox" ${it.confirmada?'checked':''} onchange="importCeiSetConfirmada(${r.lojaId},${idx},this.checked)"/> confirmo que ${it.qtd} está certo</label>`;
