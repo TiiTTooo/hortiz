@@ -3638,6 +3638,38 @@ async function avancarImportCeiStep3(){
 }
 
 function importCeiSetCategoria(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].categoria=val;atualizarBloqueioImportCei();}
+// Cadastra o produto "não cadastrado" direto da tela de importação, pedido do Tito
+// (2026-10-25) pra não precisar ir até Gerenciar Produtos. Cadastra em TODAS as lojas
+// do usuário (lojas[], a mesma lista usada no mapeamento aba→loja do passo 2), não só
+// na loja desse item — pedido explícito, pra não ter que repetir loja por loja. Também
+// resolve automaticamente qualquer outro item "não cadastrado" nesta mesma importação
+// com o mesmo nome normalizado, já que o produto passa a existir em todas as lojas.
+async function importCeiCadastrarProdutoTodasLojas(lojaId,idx){
+  const it=importCei.resultado[lojaId]&&importCei.resultado[lojaId].itens[idx];
+  if(!it)return;
+  if(!it.categoria){showToast('Escolha a categoria do produto antes de cadastrar.');return;}
+  if(!lojas.length)return;
+  const nome=it.nomeOriginal;
+  const categoria=it.categoria;
+  showToast(`Cadastrando "${nome}" em ${lojas.length} loja(s)…`);
+  try{
+    const linhas=lojas.map(l=>({loja_id:l.id,categoria,nome,tipo:'caixa',unid_por_caixa:null,ativo:true}));
+    const{error}=await db.from('produtos').upsert(linhas,{onConflict:'loja_id,categoria,nome'});
+    if(error){showToast(traduzErro(error,'Erro ao cadastrar produto: '));return;}
+  }catch(e){showToast(traduzErro(e,'Erro ao cadastrar produto: '));return;}
+  const normAlvo=normalizeNomeImportCei(nome);
+  Object.values(importCei.resultado).forEach(r=>{
+    r.itens.forEach(it2=>{
+      if(it2.desconhecido&&normalizeNomeImportCei(it2.nomeOriginal)===normAlvo){
+        it2.desconhecido=false;
+        it2.categoria=categoria;
+        it2.nomeCatalogo=nome;
+      }
+    });
+  });
+  showToast(`"${nome}" cadastrado em ${lojas.length} loja(s).`);
+  renderImportCeiStep3();
+}
 function importCeiSetConfirmada(lojaId,idx,val){importCei.resultado[lojaId].itens[idx].confirmada=val;atualizarBloqueioImportCei();}
 function importCeiSetSobrescrever(lojaId,val){importCei.resultado[lojaId].sobrescrever=val;renderImportCeiStep3();}
 // Corrigir a quantidade direto na tela de revisão (pedido do Tito, 2026-09-07, depois de
@@ -3708,7 +3740,8 @@ function renderImportCeiStep3(){
           html+=`${badge('badge-fiado','produto não cadastrado')} <select onchange="importCeiSetCategoria(${r.lojaId},${idx},this.value)" style="font-size:11px;margin-left:6px;">
             <option value="">categoria…</option>
             ${CATEGORIAS.map(c=>`<option value="${c}" ${it.categoria===c?'selected':''}>${c}</option>`).join('')}
-          </select>`;
+          </select>
+          <button class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px;" onclick="importCeiCadastrarProdutoTodasLojas(${r.lojaId},${idx})" title="Escolha a categoria e clique pra cadastrar esse produto em todas as suas lojas de uma vez"><i class="ti ti-plus"></i> Cadastrar em todas as lojas</button>`;
         }
         if(it.anomalia){
           html+=`${badge('badge-pendente',`fora do padrão (mediana ${it.mediana})`)} <label style="font-size:11px;margin-left:6px;cursor:pointer;"><input type="checkbox" ${it.confirmada?'checked':''} onchange="importCeiSetConfirmada(${r.lojaId},${idx},this.checked)"/> confirmo que ${it.qtd} está certo</label>`;
