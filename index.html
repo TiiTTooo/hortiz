@@ -1563,6 +1563,20 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
   </div>
 </div>
 
+<!-- MERGE DE PRODUTOS PARECIDOS (só muda maiúscula/espaço) -->
+<div class="modal-overlay" id="mergeProdutoModal" onclick="if(event.target===this)fecharMergeProduto()">
+  <div class="modal-box">
+    <div class="modal-head"><span class="modal-title"><i class="ti ti-git-merge"></i> Produtos parecidos</span><button class="btn-icon" onclick="fecharMergeProduto()"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:.75rem;">Esses nomes só mudam maiúscula, acento ou espaço — pro sistema são produtos diferentes, cada um com seu próprio histórico de pedido. Qual deles é o nome certo?</p>
+    <div id="mergeProdutoLista" style="margin-bottom:1rem;"></div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:.75rem;">Vincular renomeia os pedidos/compras já lançados com os outros nomes pro nome escolhido, e desativa os outros produtos do catálogo (sem apagar o histórico).</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-ghost" style="flex:1;" onclick="manterProdutosSeparados()">Manter os dois, são diferentes</button>
+      <button class="btn-primary" style="flex:1;" onclick="vincularProdutosDuplicados()"><i class="ti ti-git-merge"></i> Vincular</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="subManagerModal" onclick="if(event.target===this)el('subManagerModal').classList.remove('open')">
   <div class="modal-box">
     <div class="modal-head"><span class="modal-title"><i class="ti ti-credit-card"></i> Assinatura</span><button class="btn-icon" onclick="el('subManagerModal').classList.remove('open')"><i class="ti ti-x" style="font-size:18px;"></i></button></div>
@@ -2813,7 +2827,10 @@ async function checkSubscription(){
 function atualizarAvisoVencimento(){
   const banner=el('avisoVencimentoBanner');
   if(!banner)return;
-  const podeVerCarencia=currentUser&&(currentUser.role==='owner'||currentUser.role==='manager'||currentUser.isAdmin);
+  // Comprador também vê (pedido do Tito, 2026-10-30) — ele é quem perde acesso de
+  // verdade à aba Compras quando a loja vence, então faz sentido ele ver o aviso no
+  // login também, não só owner/manager/admin.
+  const podeVerCarencia=currentUser&&(currentUser.role==='owner'||currentUser.role==='manager'||currentUser.role==='comprador'||currentUser.isAdmin);
   if((subscription.status==='grace'||subscription.status==='expired')&&podeVerCarencia){
     // Vencida — seja ainda dentro da carência (acesso geral liberado, só avisa que o
     // bloqueio tá chegando) ou já vencida de verdade (Pedidos/Compras já bloqueados).
@@ -7387,6 +7404,69 @@ async function usarTabelaPadraoProdutos(){
   await renderGerenciarProdutos(true);
   showToast('Tabela padrão de produtos adicionada! 🎉');
 }
+// Mecanismo de produtos "quase iguais" já cadastrados (pedido do Tito, 2026-10-30,
+// depois do caso real "Melão Galia"/"Melão galia" — ver fix-duplicacao-produto-quase-
+// igual-2026-08-26.md). adicionarProduto() já BLOQUEIA a criação de um novo produto
+// quase-igual a um existente; isso aqui cobre o caso de duplicatas que já estão no
+// catálogo: detecta grupos (mesma categoria, mesmo nome normalizado — só muda
+// maiúscula/acento/espaço) com mais de uma grafia cadastrada, e oferece "vincular"
+// (escolher a grafia certa, renomear o histórico pra ela, desativar as outras) ou
+// manter como produtos diferentes mesmo (falso positivo).
+function detectarProdutosQuaseIguais(lista){
+  const grupos={};
+  (lista||[]).filter(p=>p.ativo).forEach(p=>{
+    const key=p.categoria+'|'+normProdutoNome(p.nome);
+    if(!grupos[key])grupos[key]=[];
+    grupos[key].push(p);
+  });
+  return Object.values(grupos).filter(g=>new Set(g.map(p=>p.nome)).size>1);
+}
+let produtosGruposDuplicados=[];
+let mergeProdutoGrupoAtual=null;
+function abrirMergeProduto(gi){
+  const g=produtosGruposDuplicados[gi];
+  if(!g)return;
+  mergeProdutoGrupoAtual=g;
+  el('mergeProdutoLista').innerHTML=g.map((p,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:.5rem .625rem;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:.375rem;cursor:pointer;">
+    <input type="radio" name="mergeProdutoEscolha" value="${i}" ${i===0?'checked':''}/>
+    <span style="font-size:13px;">${esc(p.nome)} <span style="font-size:11px;color:var(--text3);">(${labelCat(p.categoria)})</span></span>
+  </label>`).join('');
+  el('mergeProdutoModal').classList.add('open');
+}
+function fecharMergeProduto(){el('mergeProdutoModal').classList.remove('open');mergeProdutoGrupoAtual=null;}
+function manterProdutosSeparados(){showToast('OK, mantidos como produtos diferentes.');fecharMergeProduto();}
+async function vincularProdutosDuplicados(){
+  const g=mergeProdutoGrupoAtual;
+  if(!g)return;
+  let escolhidoIdx=0;
+  document.getElementsByName('mergeProdutoEscolha').forEach(r=>{if(r.checked)escolhidoIdx=parseInt(r.value);});
+  const manter=g[escolhidoIdx];
+  const apagar=g.filter((_,i)=>i!==escolhidoIdx);
+  if(!confirm(`Vincular "${apagar.map(p=>p.nome).join('", "')}" em "${manter.nome}"?\n\nPedidos e compras já lançados com o(s) nome(s) antigo(s) passam a usar "${manter.nome}", e o(s) produto(s) antigo(s) são desativados do catálogo (histórico não é apagado). Essa ação não tem desfazer automático.`))return;
+  showToast('Vinculando produtos…');
+  try{
+    let totalRenomeado=0;
+    for(const p of apagar){
+      const{data:d1,error:e1}=await db.from('itens_pedido').update({produto:manter.nome}).eq('loja_id',currentLojaId).eq('categoria',p.categoria).eq('produto',p.nome).select('id');
+      if(e1){showToast(traduzErro(e1,'Erro ao renomear pedidos: '));return;}
+      const{data:d2,error:e2}=await db.from('compras').update({produto:manter.nome}).eq('loja_id',currentLojaId).eq('categoria',p.categoria).eq('produto',p.nome).select('id');
+      if(e2){showToast(traduzErro(e2,'Erro ao renomear compras: '));return;}
+      totalRenomeado+=(d1||[]).length+(d2||[]).length;
+      const{error:e3}=await db.from('produtos').update({ativo:false}).eq('id',p.id);
+      if(e3){showToast(traduzErro(e3,'Erro ao desativar produto antigo: '));return;}
+    }
+    // Se o merge deixou duas linhas pro mesmo (loja,data,produto) em itens_pedido —
+    // ex: as duas grafias tinham pedido na mesma data — isso precisa de revisão manual
+    // (somar/escolher uma), não dá pra decidir sozinho qual das duas é a certa.
+    const{data:pedidosManter}=await db.from('itens_pedido').select('data').eq('loja_id',currentLojaId).eq('produto',manter.nome);
+    const contagemData={};(pedidosManter||[]).forEach(r=>{contagemData[r.data]=(contagemData[r.data]||0)+1;});
+    const datasComColisao=Object.keys(contagemData).filter(d=>contagemData[d]>1);
+    showToast(`Vinculado! ${totalRenomeado} linha(s) renomeada(s) pra "${manter.nome}".`+(datasComColisao.length?` Atenção: ${datasComColisao.length} data(s) ficaram com mais de um lançamento desse produto — confira manualmente.`:''));
+    fecharMergeProduto();
+    await carregarProdutos();
+    renderGerenciarProdutos(true);
+  }catch(e){showToast(traduzErro(e,'Erro ao vincular: '));}
+}
 async function renderGerenciarProdutos(forcarReload){
   const cont=el('listaGerenciarProdutos');if(!cont)return;
   if(produtosGerenciarCache===null||forcarReload){
@@ -7416,16 +7496,24 @@ function renderGerenciarProdutosLista(){
       wrapExcluirCat.style.display='none';
     }
   }
+  produtosGruposDuplicados=detectarProdutosQuaseIguais(data);
+  const htmlDup=produtosGruposDuplicados.length?`<div class="card" style="margin-bottom:.75rem;border:1px solid var(--amber,#f0b429);">
+    <p style="font-size:13px;font-weight:600;margin-bottom:.375rem;"><i class="ti ti-alert-triangle"></i> ${produtosGruposDuplicados.length} produto(s) parecido(s) no catálogo — só mudam maiúscula, acento ou espaço:</p>
+    ${produtosGruposDuplicados.map((g,gi)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:.375rem 0;border-top:1px solid var(--border);">
+      <span style="font-size:12px;">${g.map(p=>esc(p.nome)).join(' / ')} <span style="color:var(--text3);">(${labelCat(g[0].categoria)})</span></span>
+      <button class="btn-ghost btn-sm" onclick="abrirMergeProduto(${gi})"><i class="ti ti-git-merge"></i> Resolver</button>
+    </div>`).join('')}
+  </div>`:'';
   if(!filtrados.length){
     if(!data.length){
-      cont.innerHTML='<div class="empty"><i class="ti ti-apple"></i>Nenhum produto cadastrado ainda.<br><button class="btn-primary btn-sm" style="margin-top:.75rem;" onclick="usarTabelaPadraoProdutos()"><i class="ti ti-list-details"></i> Usar tabela padrão de produtos</button></div>';
+      cont.innerHTML=htmlDup+'<div class="empty"><i class="ti ti-apple"></i>Nenhum produto cadastrado ainda.<br><button class="btn-primary btn-sm" style="margin-top:.75rem;" onclick="usarTabelaPadraoProdutos()"><i class="ti ti-list-details"></i> Usar tabela padrão de produtos</button></div>';
     } else {
-      cont.innerHTML='<div class="empty"><i class="ti ti-apple"></i>Nenhum produto encontrado. Adicione um acima, ou ajuste os filtros.</div>';
+      cont.innerHTML=htmlDup+'<div class="empty"><i class="ti ti-apple"></i>Nenhum produto encontrado. Adicione um acima, ou ajuste os filtros.</div>';
     }
     return;
   }
   const avisoReordenar=(!podeReordenar&&filtrados.length>1)?`<p style="font-size:12px;color:var(--text3);margin-bottom:.5rem;"><i class="ti ti-info-circle"></i> Filtre por uma categoria específica (não "Todas categorias") pra poder reordenar os produtos com as setinhas.</p>`:'';
-  cont.innerHTML=avisoReordenar+filtrados.map((p,i)=>`<div class="data-card"${p.ativo?'':' style="opacity:.55;"'}>
+  cont.innerHTML=htmlDup+avisoReordenar+filtrados.map((p,i)=>`<div class="data-card"${p.ativo?'':' style="opacity:.55;"'}>
     ${podeReordenar?`<div style="display:flex;flex-direction:column;gap:2px;">
       <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===0?'disabled':''} onclick="moverProduto(${p.id},-1)" title="Mover pra cima"><i class="ti ti-chevron-up"></i></button>
       <button class="btn-ghost btn-sm" style="padding:2px 6px;" ${i===filtrados.length-1?'disabled':''} onclick="moverProduto(${p.id},1)" title="Mover pra baixo"><i class="ti ti-chevron-down"></i></button>
