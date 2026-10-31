@@ -4772,20 +4772,29 @@ function renderDespesas(){
     var rows='';
     itens.forEach(function(d){
       rows+='<tr style="border-bottom:1px solid var(--border);">'
-        +'<td style="padding:7px 12px;font-size:13px;font-weight:500;">'+d.descricao+'</td>'
-        +'<td style="padding:7px 10px;text-align:center;">'+badge(PAY_BADGE[d.forma],PAY_LABEL[d.forma])+'</td>'
-        +'<td style="padding:7px 12px;text-align:right;font-family:monospace;font-size:13px;font-weight:700;">'+fmt(d.valor)+'</td>'
-        +'<td style="padding:7px 8px;width:36px;text-align:right;">'
+        +'<td style="padding:7px 12px;font-size:13px;font-weight:500;white-space:nowrap;">'+d.descricao+'</td>'
+        +'<td style="padding:7px 10px;text-align:center;white-space:nowrap;">'+badge(PAY_BADGE[d.forma],PAY_LABEL[d.forma])+'</td>'
+        +'<td style="padding:7px 12px;text-align:right;font-family:monospace;font-size:13px;font-weight:700;white-space:nowrap;">'+fmt(d.valor)+'</td>'
+        +'<td style="padding:7px 8px;width:36px;text-align:right;white-space:nowrap;">'
           +'<button class="btn-icon" onclick="removeDespesa('+d.id+')" style="color:var(--red);font-size:17px;"><i class="ti ti-trash"></i></button>'
         +'</td></tr>';
     });
     var hojeTag=isHoje?' <span style="font-size:10px;background:var(--accent);color:var(--accent-txt);padding:1px 7px;border-radius:10px;margin-left:6px;">hoje</span>':'';
+    // Antes a tabela do dia ficava dentro de um wrapper com overflow:hidden — quando uma
+    // despesa tinha um valor largo (ex: acima de R$1.000, "R$ 10.050,00"), a linha inteira
+    // ficava mais larga que o cartão e a coluna do botão de excluir (a última) era
+    // cortada/escondida pra fora da área visível, sem nenhuma forma de rolar até ela.
+    // Agora só o cabeçalho (data+total) fica no wrapper com cantos arredondados; a tabela
+    // em si vai num wrapper próprio com rolagem horizontal, igual ao "Resumo do período"
+    // logo acima — se uma linha não couber, dá pra arrastar pro lado até o botão de excluir.
     html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:.625rem;">'
       +'<div style="padding:.5rem 1rem;background:'+(isHoje?'var(--accent-bg)':'var(--bg3)')+';border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'
         +'<span style="font-size:13px;font-weight:700;'+(isHoje?'color:var(--accent);':'')+'"><i class="ti ti-calendar" style="font-size:13px;vertical-align:-2px;margin-right:5px;"></i>'+formatBR(dt)+hojeTag+'</span>'
         +'<span style="font-family:monospace;font-size:14px;font-weight:700;'+(isHoje?'color:var(--accent);':'color:var(--text);')+'">'+fmt(totDia)+'</span>'
       +'</div>'
-      +'<table style="width:100%;border-collapse:collapse;">'+rows+'</table>'
+      +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+        +'<table style="width:100%;min-width:320px;border-collapse:collapse;">'+rows+'</table>'
+      +'</div>'
       +'</div>';
   });
   el('listaDespesas').innerHTML=html||'<div class="empty" style="padding:2rem;text-align:center;"><i class="ti ti-receipt" style="font-size:32px;display:block;margin-bottom:.5rem;"></i>Nenhuma despesa nesse período.</div>';
