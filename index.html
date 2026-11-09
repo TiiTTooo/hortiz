@@ -2207,7 +2207,18 @@ async function carregarPerfilEEntrar(userId){
 }
 
 async function enterApp(){
-  el('loginScreen').style.display='none';
+  // Remove (não só escondido) a tela de login do DOM: enquanto os <form> de
+  // login/registro/nova-senha continuam existindo na página (mesmo com
+  // display:none), o Safari do iOS escaneia o documento inteiro, vê os
+  // campos type="password" escondidos e passa a oferecer a barra de
+  // "Senhas" (QuickType) em QUALQUER input de texto da página — incluindo
+  // o campo Fornecedor. Só dar autocomplete="off" no campo de destino (fix
+  // anterior) não resolve, porque a causa é a existência dos campos de
+  // senha no DOM, não o campo que recebe a sugestão. Como o logout sempre
+  // recarrega a página (window.location.reload() em doLogout), é seguro
+  // remover esse node de vez aqui — ele nunca precisa voltar sem reload.
+  const loginScreenEl=el('loginScreen');
+  if(loginScreenEl)loginScreenEl.remove();
   el('appShell').style.display='flex';el('appShell').style.flexDirection='column';
   if((currentUser.role==='manager'||currentUser.role==='pedidos'||currentUser.role==='comprador'||currentUser.role==='supervisor')&&currentUser.lojaId){currentLojaId=currentUser.lojaId;}
   const ehGerente=currentUser.role==='manager';
