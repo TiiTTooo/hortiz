@@ -733,7 +733,7 @@ button{font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-
             <select id="prodAvulso"></select>
             <input id="qtdAvulso" type="number" placeholder="Qtd" step="1" min="0"/>
             <input id="valorAvulso" type="number" placeholder="Valor cx/un" step="0.5" min="0"/>
-            <input id="fornAvulso" placeholder="Fornecedor" list="fornAvulsoList"/>
+            <input id="fornAvulso" placeholder="Fornecedor" list="fornAvulsoList" autocomplete="off"/>
             <datalist id="fornAvulsoList"></datalist>
             <select id="pagAvulso">
               <option value="PG">💵 Dinheiro</option>
@@ -3340,7 +3340,7 @@ function renderPedido(){
           </select>
           <select id="ep-prod-${p.id}" style="flex:2;min-width:140px;"></select>
           <input type="number" step="0.5" min="0" value="${p.qtd}" id="ep-qtd-${p.id}" placeholder="Qtd" style="flex:1;min-width:80px;"/>
-          <input value="${esc(p.fornecedor||'')}" id="ep-forn-${p.id}" placeholder="Fornecedor" list="epForn-${p.id}" style="flex:2;min-width:140px;"/>
+          <input value="${esc(p.fornecedor||'')}" id="ep-forn-${p.id}" placeholder="Fornecedor" list="epForn-${p.id}" autocomplete="off" style="flex:2;min-width:140px;"/>
           <datalist id="epForn-${p.id}">${getAllFornByCat(p.categoria).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
           <button class="btn-primary" onclick="saveEditPedido(${p.id})" style="width:100%;margin-top:2px;"><i class="ti ti-device-floppy"></i> Salvar alteração</button>
         </div>`:''}
@@ -4082,7 +4082,7 @@ function renderPedidoTabela(){
           ${tipoOptionsHtml(p.tipo||'caixa')}
         </select>
         <input type="number" step="1" min="1" value="${p.unidPorCaixa||''}" id="ept-unid-${p.id}" placeholder="un/emb" style="flex:1;min-width:80px;${p.tipo==='unidade'?'opacity:.3;pointer-events:none':''}"/>
-        <input value="${esc(p.fornecedor||'')}" id="ept-forn-${p.id}" placeholder="Fornecedor" list="eptForn-${p.id}" style="flex:2;min-width:140px;"/>
+        <input value="${esc(p.fornecedor||'')}" id="ept-forn-${p.id}" placeholder="Fornecedor" list="eptForn-${p.id}" autocomplete="off" style="flex:2;min-width:140px;"/>
         <datalist id="eptForn-${p.id}">${getAllFornByCat(p.categoria).map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
         <button class="btn-primary" onclick="saveEditPedido(${p.id},true)" style="width:100%;margin-top:2px;"><i class="ti ti-device-floppy"></i> Salvar</button>
       </div>`:''}
@@ -4150,7 +4150,7 @@ function itemPendenteCatHtml(p){
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem;">
           <div>
             <label style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:2px;">Fornecedor</label>
-            <input placeholder="Fornecedor" list="pfForn2-${p.id}" id="pf-forn-cat-${p.id}" value="${esc(p.fornecedor||'')}" style="width:100%;font-size:13px;padding:5px 8px;"/>
+            <input placeholder="Fornecedor" list="pfForn2-${p.id}" id="pf-forn-cat-${p.id}" value="${esc(p.fornecedor||'')}" autocomplete="off" style="width:100%;font-size:13px;padding:5px 8px;"/>
             <datalist id="pfForn2-${p.id}">${getAllFornByCat(p.categoria).map(f=>`<option value="${f}">`).join('')}</datalist>
           </div>
           <div>
@@ -4261,7 +4261,7 @@ function renderPendentes(){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.625rem;">
         <div>
           <label style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px;">Fornecedor</label>
-          <input placeholder="Fornecedor" list="pfForn-${p.id}" id="pf-forn-${p.id}" value="${esc(p.fornecedor||'')}" style="width:100%;"/>
+          <input placeholder="Fornecedor" list="pfForn-${p.id}" id="pf-forn-${p.id}" value="${esc(p.fornecedor||'')}" autocomplete="off" style="width:100%;"/>
           <datalist id="pfForn-${p.id}">${getAllFornByCat(p.categoria).map(f=>`<option value="${f}">`).join('')}</datalist>
         </div>
         <div>
@@ -4395,7 +4395,7 @@ function renderCompras(){
         </div>
         <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
           <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
-          <input value="${esc(c.fornecedor)}" id="ec-forn-${c.id}" placeholder="Fornecedor" list="ecForn-${c.id}"/>
+          <input value="${esc(c.fornecedor)}" id="ec-forn-${c.id}" placeholder="Fornecedor" list="ecForn-${c.id}" autocomplete="off"/>
           <datalist id="ecForn-${c.id}">${getAllFornByCat(c.categoria).map(f=>`<option value="${f}">`).join('')}</datalist>
         </div>
         <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
@@ -4641,7 +4641,7 @@ function renderFornecedores(){
           </div>
           <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
             <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
-            <input value="${esc(c.fornecedor)}" id="fec-forn-${c.id}" placeholder="Fornecedor" list="fecForn-${c.id}"/>
+            <input value="${esc(c.fornecedor)}" id="fec-forn-${c.id}" placeholder="Fornecedor" list="fecForn-${c.id}" autocomplete="off"/>
             <datalist id="fecForn-${c.id}">${getAllFornByCat(c.categoria).map(fn=>`<option value="${esc(fn)}">`).join('')}</datalist>
           </div>
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
@@ -7246,7 +7246,7 @@ async function renderComprasComprador(){
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem;">
           <div>
             <label style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:2px;">Fornecedor</label>
-            <input placeholder="Fornecedor" id="cc-forn-${idx}" style="width:100%;font-size:13px;padding:5px 8px;"/>
+            <input placeholder="Fornecedor" id="cc-forn-${idx}" autocomplete="off" style="width:100%;font-size:13px;padding:5px 8px;"/>
           </div>
           <div>
             <label style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:2px;">Pagamento</label>
@@ -7362,7 +7362,7 @@ async function renderComprasCompradorFeitas(){
           </div>
           <div style="display:flex;flex-direction:column;gap:3px;flex:2;min-width:140px;">
             <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Fornecedor</label>
-            <input value="${esc(c.fornecedor||'')}" id="ecc-forn-${c.id}" placeholder="Fornecedor"/>
+            <input value="${esc(c.fornecedor||'')}" id="ecc-forn-${c.id}" placeholder="Fornecedor" autocomplete="off"/>
           </div>
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:130px;">
             <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Pagamento</label>
