@@ -28,12 +28,6 @@ try{
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── THEME TOKENS ── */
 [data-theme="dark"]{
@@ -1629,6 +1623,25 @@ Alface Crespa,verdura</pre>
 
 <div id="toast"></div>
 
+<!-- Scripts de biblioteca movidos do <head> pra cá (logo antes do script
+     principal, onde já são usados): antes ficavam no <head>, bloqueando o
+     parser do navegador — nada da página (nem a tela de login) aparecia até
+     essas 6 bibliotecas (chart.js, jspdf, jspdf-autotable, xlsx — essa
+     pesada — e supabase-js) terminarem de baixar e executar, uma atrás da
+     outra, em série. Como nenhuma delas é usada antes do usuário logar, não
+     precisam bloquear a tela inicial: aqui embaixo, a estrutura e o CSS da
+     página inteira (login, menu, telas) já foram parseados e podem ser
+     desenhados enquanto essas bibliotecas ainda carregam. A ordem de
+     execução continua garantida (igual antes), porque scripts são
+     executados na ordem em que aparecem no documento, então quando o
+     script principal logo abaixo rodar, chart.js/jsPDF/XLSX/supabase já
+     vão estar prontos, exatamente como hoje. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ═══════════ DATA ═══════════ */
 const CATALOGO_PADRAO={
@@ -7692,125 +7705,152 @@ async function carregarDadosDaLoja(){
   await carregarCategorias();
   await carregarProdutos();
   try{
+    // As leituras abaixo não dependem uma da outra (só de currentLojaId e de
+    // categoriasTodas, já carregado pelo await carregarCategorias() lá em cima) —
+    // antes rodavam uma atrás da outra (10+ idas e vindas ao banco em série) e
+    // isso sozinho já explica boa parte do "demora pra carregar as informações"
+    // depois de entrar na loja: cada requisição tem sua própria latência de rede,
+    // e em série isso soma 10 vezes. Rodando em paralelo (Promise.all), o tempo
+    // total passa a ser o da requisição mais lenta, não a soma de todas.
+    const tarefas=[];
+
     // Carrega dados atualizados da loja
-    const { data: lojaData } = await db
-      .from('lojas')
-      .select('*')
-      .eq('id', currentLojaId)
-      .single();
-    if(lojaData){
-      const idx=lojas.findIndex(l=>l.id===currentLojaId);
-      const lojaAtual={
-        id: lojaData.id,
-        nome: lojaData.nome,
-        endereco: lojaData.endereco||'',
-        cidade: lojaData.cidade||'',
-        cnpj: lojaData.cnpj||'',
-        tel: lojaData.tel||'',
-        logo: lojaData.logo||'',
-        cor: lojaData.cor_destaque||'#60a5fa'
-      };
-      if(idx===-1) lojas.push(lojaAtual); else lojas[idx]=lojaAtual;
-    }
+    tarefas.push((async()=>{
+      const { data: lojaData } = await db
+        .from('lojas')
+        .select('*')
+        .eq('id', currentLojaId)
+        .single();
+      if(lojaData){
+        const idx=lojas.findIndex(l=>l.id===currentLojaId);
+        const lojaAtual={
+          id: lojaData.id,
+          nome: lojaData.nome,
+          endereco: lojaData.endereco||'',
+          cidade: lojaData.cidade||'',
+          cnpj: lojaData.cnpj||'',
+          tel: lojaData.tel||'',
+          logo: lojaData.logo||'',
+          cor: lojaData.cor_destaque||'#60a5fa'
+        };
+        if(idx===-1) lojas.push(lojaAtual); else lojas[idx]=lojaAtual;
+      }
+    })());
+
     // Pedidos (itens_pedido)
-    const { data: pedidosData, error: pedidosErr } = await fetchTudoPaginado(() => db
-      .from('itens_pedido')
-      .select('*')
-      .eq('loja_id', currentLojaId)
-      .order('created_at', { ascending: true }));
-    if(!pedidosErr && pedidosData){
-      itensPedido = pedidosData.map(p=>({
-        id: p.id, data: p.data, produto: p.produto, categoria: p.categoria,
-        qtd: parseFloat(p.qtd), tipo: p.tipo, unidPorCaixa: p.unid_por_caixa,
-        fornecedor: p.fornecedor||null,
-        status: p.status, lojaId: p.loja_id
-      }));
-      const maxId = Math.max(0, ...itensPedido.map(p=>p.id));
-      if(maxId>=nextId) nextId = maxId+1;
-      pedidosSincronizadosOk=true;
-    } else {
-      // Bug real (loja Hortifruti 9 de Julho, 21/08/2026): quando só ESSA consulta
-      // falhava (conexão ruim), o código antigo simplesmente pulava e seguia em
-      // frente sem avisar nada — `itensPedido` ficava com o valor antigo (vazio, se
-      // fosse o primeiro carregamento). A tabela de pedidos então parecia vazia,
-      // mesmo com os pedidos já salvos no banco, e quem tava digitando achava que
-      // tinha "sumido" e digitava tudo de novo — duplicando cada item. Agora avisa
-      // bem visível e trava o salvamento (ver salvarTabela) até recarregar com sucesso.
-      pedidosSincronizadosOk=false;
-      mostrarAvisoSincronizacaoFalhou();
-    }
+    tarefas.push((async()=>{
+      const { data: pedidosData, error: pedidosErr } = await fetchTudoPaginado(() => db
+        .from('itens_pedido')
+        .select('*')
+        .eq('loja_id', currentLojaId)
+        .order('created_at', { ascending: true }));
+      if(!pedidosErr && pedidosData){
+        itensPedido = pedidosData.map(p=>({
+          id: p.id, data: p.data, produto: p.produto, categoria: p.categoria,
+          qtd: parseFloat(p.qtd), tipo: p.tipo, unidPorCaixa: p.unid_por_caixa,
+          fornecedor: p.fornecedor||null,
+          status: p.status, lojaId: p.loja_id
+        }));
+        const maxId = Math.max(0, ...itensPedido.map(p=>p.id));
+        if(maxId>=nextId) nextId = maxId+1;
+        pedidosSincronizadosOk=true;
+      } else {
+        // Bug real (loja Hortifruti 9 de Julho, 21/08/2026): quando só ESSA consulta
+        // falhava (conexão ruim), o código antigo simplesmente pulava e seguia em
+        // frente sem avisar nada — `itensPedido` ficava com o valor antigo (vazio, se
+        // fosse o primeiro carregamento). A tabela de pedidos então parecia vazia,
+        // mesmo com os pedidos já salvos no banco, e quem tava digitando achava que
+        // tinha "sumido" e digitava tudo de novo — duplicando cada item. Agora avisa
+        // bem visível e trava o salvamento (ver salvarTabela) até recarregar com sucesso.
+        pedidosSincronizadosOk=false;
+        mostrarAvisoSincronizacaoFalhou();
+      }
+    })());
 
     // Compras
-    const { data: comprasData, error: comprasErr } = await fetchTudoPaginado(() => db
-      .from('compras')
-      .select('*')
-      .eq('loja_id', currentLojaId)
-      .order('created_at', { ascending: true }));
-    if(!comprasErr && comprasData){
-      compras = comprasData.map(c=>({
-        id: c.id, produto: c.produto, categoria: c.categoria,
-        qtd: parseFloat(c.qtd), valorUnit: parseFloat(c.valor_unit),
-        custoUnitario: parseFloat(c.valor_unit), fornecedor: c.fornecedor,
-        pagamento: c.pagamento, planejado: !!c.item_pedido_id, lojaId: c.loja_id,
-        data: c.data, itemPedidoId: c.item_pedido_id||null
-      }));
-      const maxCompraId = Math.max(0, ...compras.map(c=>c.id));
-      if(maxCompraId>=nextCompraId) nextCompraId = maxCompraId+1;
-      // reconstrói priceHistory a partir das compras carregadas
-      priceHistory = compras.map(c=>({
-        produto:c.produto, categoria:c.categoria, data:c.data, valor:c.valorUnit,
-        custoUnitario:c.custoUnitario, fornecedor:c.fornecedor, lojaId:c.lojaId
-      }));
-    }
+    tarefas.push((async()=>{
+      const { data: comprasData, error: comprasErr } = await fetchTudoPaginado(() => db
+        .from('compras')
+        .select('*')
+        .eq('loja_id', currentLojaId)
+        .order('created_at', { ascending: true }));
+      if(!comprasErr && comprasData){
+        compras = comprasData.map(c=>({
+          id: c.id, produto: c.produto, categoria: c.categoria,
+          qtd: parseFloat(c.qtd), valorUnit: parseFloat(c.valor_unit),
+          custoUnitario: parseFloat(c.valor_unit), fornecedor: c.fornecedor,
+          pagamento: c.pagamento, planejado: !!c.item_pedido_id, lojaId: c.loja_id,
+          data: c.data, itemPedidoId: c.item_pedido_id||null
+        }));
+        const maxCompraId = Math.max(0, ...compras.map(c=>c.id));
+        if(maxCompraId>=nextCompraId) nextCompraId = maxCompraId+1;
+        // reconstrói priceHistory a partir das compras carregadas
+        priceHistory = compras.map(c=>({
+          produto:c.produto, categoria:c.categoria, data:c.data, valor:c.valorUnit,
+          custoUnitario:c.custoUnitario, fornecedor:c.fornecedor, lojaId:c.lojaId
+        }));
+      }
+    })());
+
     // Despesas
-    const {data:despData,error:despErr}=await fetchTudoPaginado(()=>db.from('despesas')
-      .select('*').eq('loja_id',currentLojaId).order('data',{ascending:true}));
-    if(!despErr&&despData){
-      despesas=despData.map(d=>({
-        id:d.id,descricao:d.descricao,valor:parseFloat(d.valor),
-        forma:d.forma,lojaId:d.loja_id,data:d.data
-      }));
-    }
+    tarefas.push((async()=>{
+      const {data:despData,error:despErr}=await fetchTudoPaginado(()=>db.from('despesas')
+        .select('*').eq('loja_id',currentLojaId).order('data',{ascending:true}));
+      if(!despErr&&despData){
+        despesas=despData.map(d=>({
+          id:d.id,descricao:d.descricao,valor:parseFloat(d.valor),
+          forma:d.forma,lojaId:d.loja_id,data:d.data
+        }));
+      }
+    })());
 
     // Tipos de despesa da loja
-    try{
-      const {data:tiposData,error:tiposErr}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
-      if(!tiposErr&&tiposData&&tiposData.length)DESPESAS_TIPO=tiposData.map(t=>t.nome);
-    }catch(e){}
+    tarefas.push((async()=>{
+      try{
+        const {data:tiposData,error:tiposErr}=await db.from('despesas_tipos').select('nome').eq('loja_id',currentLojaId).eq('ativo',true).order('nome');
+        if(!tiposErr&&tiposData&&tiposData.length)DESPESAS_TIPO=tiposData.map(t=>t.nome);
+      }catch(e){}
+    })());
 
     // Fornecedores (todos, já que agora ficam todos no banco por loja)
-    const {data:fornData,error:fornErr}=await db.from('fornecedores')
-      .select('*').eq('loja_id',currentLojaId).order('nome');
-    if(!fornErr&&fornData){
-      const novoForn={};
-      categoriasTodas.forEach(c=>{novoForn[c.chave]=[];});
-      ['fruta','legume','verdura'].forEach(c=>{if(!novoForn[c])novoForn[c]=[];});
-      fornData.forEach(f=>{
-        const cat=f.categoria;
-        if(!novoForn[cat])novoForn[cat]=[];
-        novoForn[cat].push({id:f.id,nome:f.nome,ordem:f.ordem||0});
-      });
-      fornCustom=novoForn;
-    }
+    tarefas.push((async()=>{
+      const {data:fornData,error:fornErr}=await db.from('fornecedores')
+        .select('*').eq('loja_id',currentLojaId).order('nome');
+      if(!fornErr&&fornData){
+        const novoForn={};
+        categoriasTodas.forEach(c=>{novoForn[c.chave]=[];});
+        ['fruta','legume','verdura'].forEach(c=>{if(!novoForn[c])novoForn[c]=[];});
+        fornData.forEach(f=>{
+          const cat=f.categoria;
+          if(!novoForn[cat])novoForn[cat]=[];
+          novoForn[cat].push({id:f.id,nome:f.nome,ordem:f.ordem||0});
+        });
+        fornCustom=novoForn;
+      }
+    })());
 
     // Margens customizadas
-    const {data:margData,error:margErr}=await db.from('margens_custom')
-      .select('*').eq('loja_id',currentLojaId);
-    if(!margErr&&margData){
-      margemCustom={};
-      margData.forEach(m=>{margemCustom[m.produto]={tipo:m.tipo,valor:parseFloat(m.valor)};});
-    }
+    tarefas.push((async()=>{
+      const {data:margData,error:margErr}=await db.from('margens_custom')
+        .select('*').eq('loja_id',currentLojaId);
+      if(!margErr&&margData){
+        margemCustom={};
+        margData.forEach(m=>{margemCustom[m.produto]={tipo:m.tipo,valor:parseFloat(m.valor)};});
+      }
+    })());
 
     // Margem global (o slider da aba Preços) — agora persistida por loja em vez de
     // resetar pro padrão de 40% a cada carregamento de página.
-    try{
-      const {data:mgData,error:mgErr}=await db.from('margem_global').select('percentual').eq('loja_id',currentLojaId).maybeSingle();
-      const pct=(!mgErr&&mgData&&mgData.percentual!=null)?Math.round(parseFloat(mgData.percentual)):40;
-      const mgRange=el('margemRange');
-      if(mgRange)mgRange.value=pct;
-      const mgLabel=el('margemLabel');
-      if(mgLabel)mgLabel.textContent=pct+'%';
-    }catch(e){}
+    tarefas.push((async()=>{
+      try{
+        const {data:mgData,error:mgErr}=await db.from('margem_global').select('percentual').eq('loja_id',currentLojaId).maybeSingle();
+        const pct=(!mgErr&&mgData&&mgData.percentual!=null)?Math.round(parseFloat(mgData.percentual)):40;
+        const mgRange=el('margemRange');
+        if(mgRange)mgRange.value=pct;
+        const mgLabel=el('margemLabel');
+        if(mgLabel)mgLabel.textContent=pct+'%';
+      }catch(e){}
+    })());
 
     // Preço final via RPC (banco) — só pro papel Supervisor(a), que desde
     // 2026-08-25 não tem mais leitura direta de margem_global/margens_custom.
@@ -7820,11 +7860,15 @@ async function carregarDadosDaLoja(){
     // essa aba antes (não reseta a escolha ao trocar de loja); senão, mês de
     // currentDate — mesmo padrão usado por mapaPrecoFinalPorProduto() pro dono/gerente.
     if(currentUser&&currentUser.role==='supervisor'){
-      const mesInicial=(el('precoFinalMesFiltro')&&el('precoFinalMesFiltro').value)||currentDate.substring(0,7);
-      await carregarPrecoFinalRPC({tipo:'mes',mes:mesInicial});
+      tarefas.push((async()=>{
+        const mesInicial=(el('precoFinalMesFiltro')&&el('precoFinalMesFiltro').value)||currentDate.substring(0,7);
+        await carregarPrecoFinalRPC({tipo:'mes',mes:mesInicial});
+      })());
     }else{
       precoFinalRPC={};
     }
+
+    await Promise.all(tarefas);
 
   }catch(e){
     pedidosSincronizadosOk=false;
